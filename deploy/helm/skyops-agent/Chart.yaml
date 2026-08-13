@@ -1,0 +1,15 @@
+apiVersion: v2
+name: skyops-agent
+description: Official SkyOps Kubernetes Agent Helm Chart for observability and incident telemetry.
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - skyops
+  - kubernetes
+  - observability
+  - incident-management
+  - agent
+maintainers:
+  - name: SkyOps SRE Team
+    email: support@skyops.io
