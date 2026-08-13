@@ -3,7 +3,7 @@ package tickets
 import (
 	"testing"
 
-	"github.com/skyops/skyops/backend/pkg/models"
+	"github.com/dhandesaurav52/skyops-k8s-inc-id/backend/pkg/models"
 )
 
 func TestTicketCreationAndComments(t *testing.T) {

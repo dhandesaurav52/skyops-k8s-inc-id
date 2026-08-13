@@ -19,11 +19,18 @@ export const ConnectClusterModal: React.FC<ConnectClusterModalProps> = ({
   const [copied, setCopied] = useState(false);
   const [registrationResult, setRegistrationResult] = useState<{
     registration_token: string;
-    helm_command: string;
+    install_command?: string;
+    helm_command?: string;
     cluster: any;
   } | null>(null);
 
   if (!isOpen) return null;
+
+  const getCommand = () => {
+    if (!registrationResult) return '';
+    if (registrationResult.install_command) return registrationResult.install_command;
+    return `curl -fsSL https://install.skyops.io/agent.sh | SKYOPS_TOKEN="${registrationResult.registration_token}" SKYOPS_CLUSTER="${clusterName}" bash`;
+  };
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,8 +49,9 @@ export const ConnectClusterModal: React.FC<ConnectClusterModalProps> = ({
   };
 
   const handleCopy = () => {
-    if (!registrationResult) return;
-    navigator.clipboard.writeText(registrationResult.helm_command);
+    const cmd = getCommand();
+    if (!cmd) return;
+    navigator.clipboard.writeText(cmd);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -128,7 +136,7 @@ export const ConnectClusterModal: React.FC<ConnectClusterModalProps> = ({
                   className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold px-5 py-2 rounded-md text-xs flex items-center gap-2 transition-colors"
                 >
                   {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                  <span>Generate Helm Installation Command</span>
+                  <span>Generate Installation Command</span>
                 </button>
               </div>
             </form>
@@ -145,10 +153,10 @@ export const ConnectClusterModal: React.FC<ConnectClusterModalProps> = ({
                 </div>
               </div>
 
-              {/* Helm Command Box */}
+              {/* One-line Install Command Box */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-xs font-bold text-slate-300 font-mono">Helm V3 Install Command</span>
+                  <span className="text-xs font-bold text-slate-300 font-mono">One-Line Shell Installer (No Helm / Docker required)</span>
                   <button
                     onClick={handleCopy}
                     className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 px-2.5 py-1 rounded border border-emerald-500/30 transition-colors"
@@ -159,7 +167,7 @@ export const ConnectClusterModal: React.FC<ConnectClusterModalProps> = ({
                 </div>
 
                 <pre className="bg-slate-950 p-4 rounded-lg border border-slate-800 text-xs font-mono text-emerald-300 overflow-x-auto whitespace-pre leading-relaxed select-all">
-                  {registrationResult.helm_command}
+                  {getCommand()}
                 </pre>
               </div>
 

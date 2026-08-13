@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/skyops/skyops/backend/pkg/models"
+	"github.com/dhandesaurav52/skyops-k8s-inc-id/backend/pkg/models"
 )
 
 type Manager struct{}

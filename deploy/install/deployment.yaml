@@ -1,12 +1,13 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Release.Name }}
-  namespace: {{ .Release.Namespace }}
+  name: skyops-agent
+  namespace: skyops-system
   labels:
     app.kubernetes.io/name: skyops-agent
+    app.kubernetes.io/part-of: skyops
 spec:
-  replicas: {{ .Values.agent.replicaCount }}
+  replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: skyops-agent
@@ -14,40 +15,35 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: skyops-agent
+        app.kubernetes.io/part-of: skyops
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "8081"
         prometheus.io/path: "/metrics"
     spec:
-      serviceAccountName: {{ .Values.serviceAccount.name }}
+      serviceAccountName: skyops-agent-sa
       containers:
         - name: skyops-agent
-          image: "{{ .Values.agent.image.repository }}:{{ .Values.agent.image.tag }}"
-          imagePullPolicy: {{ .Values.agent.image.pullPolicy }}
+          image: dhandesaurav52/skyops-agent:1.0.0
+          imagePullPolicy: IfNotPresent
           ports:
             - name: metrics
               containerPort: 8081
               protocol: TCP
           env:
             - name: SKYOPS_SERVER_URL
-              valueFrom:
-                configMapKeyRef:
-                  name: {{ .Release.Name }}-config
-                  key: server_url
+              value: "${SKYOPS_SERVER_URL}"
             - name: SKYOPS_CLUSTER_NAME
-              valueFrom:
-                configMapKeyRef:
-                  name: {{ .Release.Name }}-config
-                  key: cluster_name
+              value: "${SKYOPS_CLUSTER}"
             - name: SKYOPS_AGENT_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Release.Name }}-secret
+                  name: skyops-agent-secret
                   key: registration_token
             - name: SKYOPS_REGISTRATION_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Release.Name }}-secret
+                  name: skyops-agent-secret
                   key: registration_token
           livenessProbe:
             httpGet:
@@ -62,4 +58,9 @@ spec:
             initialDelaySeconds: 3
             periodSeconds: 5
           resources:
-            {{- toYaml .Values.agent.resources | nindent 12 }}
+            limits:
+              cpu: 200m
+              memory: 256Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi

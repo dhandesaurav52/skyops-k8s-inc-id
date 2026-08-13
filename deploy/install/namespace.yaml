@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: skyops-system
+  labels:
+    app.kubernetes.io/name: skyops-agent
+    app.kubernetes.io/part-of: skyops

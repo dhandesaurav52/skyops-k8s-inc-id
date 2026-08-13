@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
@@ -180,6 +181,23 @@ async function startServer() {
     res.json({ demoMode: store.demoMode });
   });
 
+  // Installer script endpoints
+  const serveInstallerScript = (req: express.Request, res: express.Response) => {
+    try {
+      const scriptPath = path.join(process.cwd(), 'install.sh');
+      if (fs.existsSync(scriptPath)) {
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        return res.sendFile(scriptPath);
+      }
+      return res.status(404).send('# Installer script not found');
+    } catch (err) {
+      return res.status(500).send('# Error loading installer script');
+    }
+  };
+
+  app.get('/agent.sh', serveInstallerScript);
+  app.get('/install.sh', serveInstallerScript);
+
   // Clusters API
   app.get('/api/v1/clusters', (req, res) => {
     res.json(store.clusters);
@@ -219,20 +237,13 @@ async function startServer() {
     store.clusters.push(cluster);
     logAudit('cluster_registered', name, `Cluster registration token created for ${name}`);
 
-    const helmCommand =
-      `helm repo add skyops https://dhandesaurav52.github.io/k8s-ops\n` +
-      `helm repo update\n\n` +
-      `helm upgrade --install skyops-agent skyops/skyops-agent \\\n` +
-      `  --namespace skyops-system \\\n` +
-      `  --create-namespace \\\n` +
-      `  --set server.url="${process.env.APP_URL || 'https://api.skyops.example.com'}" \\\n` +
-      `  --set cluster.name="${name}" \\\n` +
-      `  --set agent.token="${regToken}"`;
+    const installCommand = `curl -fsSL https://install.skyops.io/agent.sh | SKYOPS_TOKEN="${regToken}" SKYOPS_CLUSTER="${name}" bash`;
 
     res.json({
       cluster,
       registration_token: regToken,
-      helm_command: helmCommand,
+      install_command: installCommand,
+      helm_command: installCommand,
     });
   });
 

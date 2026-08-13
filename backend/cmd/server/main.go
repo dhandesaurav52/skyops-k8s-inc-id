@@ -6,30 +6,29 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/skyops/skyops/backend/internal/clusters"
-	"github.com/skyops/skyops/backend/internal/incidents"
-	"github.com/skyops/skyops/backend/internal/tickets"
-	"github.com/skyops/skyops/backend/pkg/models"
+	"github.com/dhandesaurav52/skyops-k8s-inc-id/backend/internal/clusters"
+	"github.com/dhandesaurav52/skyops-k8s-inc-id/backend/internal/incidents"
+	"github.com/dhandesaurav52/skyops-k8s-inc-id/backend/internal/tickets"
+	"github.com/dhandesaurav52/skyops-k8s-inc-id/backend/pkg/models"
 )
 
 type ServerStore struct {
-	mu            sync.RWMutex
-	clusters      map[string]*models.Cluster
-	incidents     map[string]*models.Incident
-	tickets       map[string]*models.Ticket
-	auditLogs     []*models.AuditLog
-	k8sEvents     []*models.K8sEvent
-	workloads     map[string]*models.WorkloadHealth
-	nodes         map[string]*models.NodeHealth
-	clusterMgr    *clusters.Manager
-	correlator    *incidents.Correlator
-	ticketMgr     *tickets.Manager
-	httpReqCount  int64
-	eventsCount   int64
+	mu           sync.RWMutex
+	clusters     map[string]*models.Cluster
+	incidents    map[string]*models.Incident
+	tickets      map[string]*models.Ticket
+	auditLogs    []*models.AuditLog
+	k8sEvents    []*models.K8sEvent
+	workloads    map[string]*models.WorkloadHealth
+	nodes        map[string]*models.NodeHealth
+	clusterMgr   *clusters.Manager
+	correlator   *incidents.Correlator
+	ticketMgr    *tickets.Manager
+	httpReqCount int64
+	eventsCount  int64
 }
 
 func NewServerStore() *ServerStore {
@@ -110,7 +109,6 @@ func main() {
 		store.mu.Lock()
 		defer store.mu.Unlock()
 
-		// Find cluster matching registration token
 		var targetCluster *models.Cluster
 		for _, cls := range store.clusters {
 			if cls.RegistrationToken == req.RegistrationToken {
@@ -120,7 +118,6 @@ func main() {
 		}
 
 		if targetCluster == nil {
-			// Auto register cluster if valid registration token provided
 			targetCluster, _ = store.clusterMgr.RegisterCluster("org-default", req.ClusterName, "production")
 			targetCluster.RegistrationToken = req.RegistrationToken
 			store.clusters[targetCluster.ID] = targetCluster
@@ -182,7 +179,6 @@ func main() {
 
 		cluster, exists := store.clusters[req.ClusterID]
 		if !exists {
-			// Auto create if token matches or missing
 			cluster = &models.Cluster{
 				ID:             req.ClusterID,
 				OrganizationID: req.OrgID,
@@ -215,6 +211,94 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 
+	// Batch Events API Handler (Requirement 6)
+	mux.HandleFunc("/api/v1/agent/events/batch", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req struct {
+			ClusterID    string            `json:"cluster_id"`
+			ClusterToken string            `json:"cluster_token"`
+			Events       []*models.K8sEvent `json:"events"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid JSON body", http.StatusBadRequest)
+			return
+		}
+
+		store.mu.Lock()
+		defer store.mu.Unlock()
+
+		store.eventsCount += int64(len(req.Events))
+		store.k8sEvents = append(store.k8sEvents, req.Events...)
+		if len(store.k8sEvents) > 1000 {
+			store.k8sEvents = store.k8sEvents[len(store.k8sEvents)-1000:]
+		}
+
+		// Correlate warning/error events into incidents
+		var existingIncidents []*models.Incident
+		for _, inc := range store.incidents {
+			existingIncidents = append(existingIncidents, inc)
+		}
+
+		for _, evt := range req.Events {
+			if evt.Type == "Warning" || evt.Type == "Error" {
+				inc, isNew := store.correlator.CorrelateEvent(
+					existingIncidents,
+					evt.OrganizationID,
+					evt.ClusterID,
+					evt.ClusterName,
+					evt.Namespace,
+					evt.Kind,
+					evt.Resource,
+					"",
+					evt.Reason,
+					evt.Message,
+					fmt.Sprintf("%s: %s", evt.Reason, evt.Message),
+				)
+				if isNew {
+					store.incidents[inc.ID] = inc
+					existingIncidents = append(existingIncidents, inc)
+				}
+			}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"status": "ok", "ingested": len(req.Events)})
+	})
+
+	// Direct Agent Incidents Upload Handler
+	mux.HandleFunc("/api/v1/agent/incidents", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req struct {
+			ClusterID    string             `json:"cluster_id"`
+			ClusterToken string             `json:"cluster_token"`
+			Incidents    []*models.Incident `json:"incidents"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid JSON body", http.StatusBadRequest)
+			return
+		}
+
+		store.mu.Lock()
+		defer store.mu.Unlock()
+
+		for _, inc := range req.Incidents {
+			store.incidents[inc.ID] = inc
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"status": "ok", "ingested": len(req.Incidents)})
+	})
+
 	// Cluster API
 	mux.HandleFunc("/api/v1/clusters", func(w http.ResponseWriter, r *http.Request) {
 		store.mu.RLock()
@@ -223,6 +307,20 @@ func main() {
 		list := make([]*models.Cluster, 0, len(store.clusters))
 		for _, cls := range store.clusters {
 			list = append(list, cls)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(list)
+	})
+
+	// Incidents API
+	mux.HandleFunc("/api/v1/incidents", func(w http.ResponseWriter, r *http.Request) {
+		store.mu.RLock()
+		defer store.mu.RUnlock()
+
+		list := make([]*models.Incident, 0, len(store.incidents))
+		for _, inc := range store.incidents {
+			list = append(list, inc)
 		}
 
 		w.Header().Set("Content-Type", "application/json")

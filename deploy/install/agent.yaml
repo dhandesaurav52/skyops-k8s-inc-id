@@ -1,0 +1,135 @@
+# SkyOps Kubernetes Agent Complete Installation Manifest
+# Can be applied directly using:
+#   kubectl apply -f deploy/install/agent.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: skyops-system
+  labels:
+    app.kubernetes.io/name: skyops-agent
+    app.kubernetes.io/part-of: skyops
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: skyops-agent-sa
+  namespace: skyops-system
+  labels:
+    app.kubernetes.io/name: skyops-agent
+    app.kubernetes.io/part-of: skyops
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: skyops-agent-role
+  labels:
+    app.kubernetes.io/name: skyops-agent
+    app.kubernetes.io/part-of: skyops
+rules:
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - pods/status
+      - nodes
+      - nodes/status
+      - events
+      - namespaces
+      - services
+      - configmaps
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - daemonsets
+      - statefulsets
+      - replicasets
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources:
+      - jobs
+      - cronjobs
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: skyops-agent-binding
+  labels:
+    app.kubernetes.io/name: skyops-agent
+    app.kubernetes.io/part-of: skyops
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: skyops-agent-role
+subjects:
+  - kind: ServiceAccount
+    name: skyops-agent-sa
+    namespace: skyops-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: skyops-agent
+  namespace: skyops-system
+  labels:
+    app.kubernetes.io/name: skyops-agent
+    app.kubernetes.io/part-of: skyops
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: skyops-agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: skyops-agent
+        app.kubernetes.io/part-of: skyops
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8081"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: skyops-agent-sa
+      containers:
+        - name: skyops-agent
+          image: dhandesaurav52/skyops-agent:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: metrics
+              containerPort: 8081
+              protocol: TCP
+          env:
+            - name: SKYOPS_SERVER_URL
+              value: "https://api.skyops.io"
+            - name: SKYOPS_CLUSTER_NAME
+              value: "default"
+            - name: SKYOPS_AGENT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: skyops-agent-secret
+                  key: registration_token
+            - name: SKYOPS_REGISTRATION_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: skyops-agent-secret
+                  key: registration_token
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8081
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            limits:
+              cpu: 200m
+              memory: 256Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi

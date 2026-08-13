@@ -1,0 +1,57 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: skyops-agent-sa
+  namespace: skyops-system
+  labels:
+    app.kubernetes.io/name: skyops-agent
+    app.kubernetes.io/part-of: skyops
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: skyops-agent-role
+  labels:
+    app.kubernetes.io/name: skyops-agent
+    app.kubernetes.io/part-of: skyops
+rules:
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - pods/status
+      - nodes
+      - nodes/status
+      - events
+      - namespaces
+      - services
+      - configmaps
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - daemonsets
+      - statefulsets
+      - replicasets
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources:
+      - jobs
+      - cronjobs
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: skyops-agent-binding
+  labels:
+    app.kubernetes.io/name: skyops-agent
+    app.kubernetes.io/part-of: skyops
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: skyops-agent-role
+subjects:
+  - kind: ServiceAccount
+    name: skyops-agent-sa
+    namespace: skyops-system
