@@ -1,0 +1,33 @@
+{{- if .Values.postgresql.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "skyops.postgresqlFullname" . }}
+  labels:
+    {{- include "skyops.postgresqlLabels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5432
+      targetPort: postgresql
+      protocol: TCP
+      name: postgresql
+  selector:
+    {{- include "skyops.postgresqlSelectorLabels" . | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "skyops.postgresqlFullname" . }}-hl
+  labels:
+    {{- include "skyops.postgresqlLabels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  ports:
+    - port: 5432
+      targetPort: postgresql
+      protocol: TCP
+      name: postgresql
+  selector:
+    {{- include "skyops.postgresqlSelectorLabels" . | nindent 4 }}
+{{- end }}

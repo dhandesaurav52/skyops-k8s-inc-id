@@ -12,6 +12,9 @@ import {
   ArrowRight,
   Eye,
   EyeOff,
+  Terminal,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { verifyBootstrapPassword, createPermanentAdmin } from '../services/api';
 import { User, SetupStatus } from '../types';
@@ -29,6 +32,20 @@ export const BootstrapPage: React.FC<BootstrapPageProps> = ({ setupStatus: _setu
   const [bootstrapPassword, setBootstrapPassword] = useState('');
   const [showBootstrapPassword, setShowBootstrapPassword] = useState(false);
   const [bootstrapToken, setBootstrapToken] = useState<string | null>(null);
+  const [activeHintTab, setActiveHintTab] = useState<'host' | 'docker' | 'k8s'>('host');
+  const [copiedText, setCopiedText] = useState<string | null>(null);
+
+  const HINT_COMMANDS = {
+    host: 'cat /app/.data/secrets/initial-admin-password',
+    docker: 'docker exec -it skyops cat /app/.data/secrets/initial-admin-password',
+    k8s: 'kubectl exec deploy/skyops -n skyops -- cat /app/.data/secrets/initial-admin-password',
+  };
+
+  const handleCopyCommand = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedText(text);
+    setTimeout(() => setCopiedText(null), 2000);
+  };
 
   // Step 2 State
   const [fullName, setFullName] = useState('');
@@ -212,6 +229,78 @@ export const BootstrapPage: React.FC<BootstrapPageProps> = ({ setupStatus: _setu
                 <p className="text-xs text-slate-400 mt-2 leading-relaxed max-w-sm mx-auto">
                   Enter the one-time bootstrap password printed by the SkyOps installer in your terminal.
                 </p>
+
+                {/* Clue Command Box for Operator */}
+                <div id="bootstrap-terminal-clue" className="mt-4 max-w-md mx-auto text-left bg-[#080d15] border border-[#172336] rounded-lg overflow-hidden">
+                  <div className="flex items-center justify-between px-3 py-1.5 bg-[#0b1320] border-b border-[#172336] text-[11px] font-mono">
+                    <div className="flex items-center gap-1.5 text-slate-400">
+                      <Terminal className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>Retrieve Password:</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        id="tab-hint-host"
+                        type="button"
+                        onClick={() => setActiveHintTab('host')}
+                        className={`px-2 py-0.5 rounded text-[10px] transition-colors ${
+                          activeHintTab === 'host'
+                            ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/40'
+                            : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        Host
+                      </button>
+                      <button
+                        id="tab-hint-docker"
+                        type="button"
+                        onClick={() => setActiveHintTab('docker')}
+                        className={`px-2 py-0.5 rounded text-[10px] transition-colors ${
+                          activeHintTab === 'docker'
+                            ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/40'
+                            : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        Docker
+                      </button>
+                      <button
+                        id="tab-hint-k8s"
+                        type="button"
+                        onClick={() => setActiveHintTab('k8s')}
+                        className={`px-2 py-0.5 rounded text-[10px] transition-colors ${
+                          activeHintTab === 'k8s'
+                            ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/40'
+                            : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        K8s
+                      </button>
+                    </div>
+                  </div>
+                  <div className="p-2.5 flex items-center justify-between gap-2 bg-[#05080e] font-mono text-[11px]">
+                    <code className="text-cyan-300 select-all overflow-x-auto whitespace-nowrap scrollbar-none font-semibold">
+                      {HINT_COMMANDS[activeHintTab]}
+                    </code>
+                    <button
+                      id="copy-terminal-clue-btn"
+                      type="button"
+                      onClick={() => handleCopyCommand(HINT_COMMANDS[activeHintTab])}
+                      className="shrink-0 px-2 py-1 rounded bg-[#101928] hover:bg-[#18263c] text-slate-300 hover:text-white transition-colors border border-[#1e2f47] flex items-center gap-1 text-[10px]"
+                      title="Copy command to clipboard"
+                    >
+                      {copiedText === HINT_COMMANDS[activeHintTab] ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          <span className="text-emerald-400 font-bold">Copied!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5 text-slate-400" />
+                          <span>Copy</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
               </div>
 
               <div className="p-8 pt-4 space-y-5">

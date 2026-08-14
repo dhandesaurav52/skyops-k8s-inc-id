@@ -53,6 +53,7 @@ export async function testOneLineInstallerWorkflow() {
       SKYOPS_INSTALL_DIR: testTmpDir,
       SKYOPS_PORT: '3999',
       SKYOPS_HOST: '127.0.0.1',
+      SKYOPS_SKIP_WAIT: '1',
     };
 
     const outputFresh = execSync(`bash ${installerPath}`, { env, encoding: 'utf8' });

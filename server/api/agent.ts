@@ -19,9 +19,42 @@ agentRouter.post('/register', async (req: Request, res: Response) => {
     const tokenHash = hashToken(registration_token);
 
     // Look up cluster by registration token hash
-    const cluster = await repo.getClusterByTokenHash(tokenHash);
+    let cluster = await repo.getClusterByTokenHash(tokenHash);
 
-    if (!cluster || cluster.registration_token_hash !== tokenHash) {
+    // Check if token matches in-cluster pre-shared secret (from Helm chart / env)
+    const envToken = process.env.AGENT_REGISTRATION_TOKEN || process.env.SKYOPS_REGISTRATION_TOKEN;
+    if (!cluster && envToken && registration_token === envToken) {
+      // Find or create default organization
+      let orgs = await repo.listOrganizations();
+      let org = orgs[0];
+      if (!org) {
+        org = await repo.createOrganization('Primary Organization', 'primary');
+      }
+
+      const targetClusterName = cluster_name || process.env.SKYOPS_CLUSTER_NAME || 'in-cluster';
+      cluster = await repo.getClusterByName(targetClusterName, org.id);
+
+      if (!cluster) {
+        cluster = await repo.createCluster({
+          organization_id: org.id,
+          name: targetClusterName,
+          environment: 'production',
+          status: 'CONNECTED',
+          k8s_version: k8s_version || 'v1.30.0',
+          agent_version: agent_version || 'v1.0.0',
+          node_count: 0,
+          pod_count: 0,
+          namespace_count: 0,
+          active_incidents: 0,
+          cpu_usage_cores: 0.0,
+          memory_usage_bytes: 0,
+          last_heartbeat: new Date().toISOString(),
+          is_demo: false,
+        });
+      }
+    }
+
+    if (!cluster) {
       return res.status(401).json({ error: 'Invalid or expired registration token' });
     }
 
@@ -61,7 +94,17 @@ agentRouter.post('/register', async (req: Request, res: Response) => {
 
 // POST /api/v1/agent/heartbeat
 agentRouter.post('/heartbeat', requireClusterToken, async (req: AuthenticatedRequest, res: Response) => {
-  const { node_count, pod_count, namespace_count, k8s_version, agent_version, cpu_usage_cores, memory_usage_bytes } = req.body;
+  const {
+    node_count,
+    pod_count,
+    namespace_count,
+    k8s_version,
+    agent_version,
+    cpu_usage_cores,
+    memory_usage_bytes,
+    nodes,
+    workloads,
+  } = req.body;
 
   try {
     const repo = await getRepository();
@@ -80,14 +123,50 @@ agentRouter.post('/heartbeat', requireClusterToken, async (req: AuthenticatedReq
       last_heartbeat: now,
     });
 
+    // Save embedded nodes if provided in heartbeat
+    if (Array.isArray(nodes) && nodes.length > 0) {
+      const nodesToSave = nodes.map((n: any) => ({
+        organization_id: cluster.organization_id,
+        cluster_id: cluster.id,
+        cluster_name: cluster.name,
+        name: n.name,
+        status: n.status || 'Ready',
+        k8s_version: n.k8s_version || cluster.k8s_version,
+        cpu_allocatable: n.cpu_allocatable || '4',
+        mem_allocatable: n.mem_allocatable || '16Gi',
+        pod_count: n.pod_count || 0,
+        memory_pressure: !!n.memory_pressure,
+        disk_pressure: !!n.disk_pressure,
+        pid_pressure: !!n.pid_pressure,
+      }));
+      await repo.saveNodeHealth(nodesToSave);
+    }
+
+    // Save embedded workloads if provided in heartbeat
+    if (Array.isArray(workloads) && workloads.length > 0) {
+      const workloadsToSave = workloads.map((w: any) => ({
+        organization_id: cluster.organization_id,
+        cluster_id: cluster.id,
+        cluster_name: cluster.name,
+        namespace: w.namespace || 'default',
+        name: w.name,
+        kind: w.kind || 'Deployment',
+        desired: w.desired || 1,
+        ready: w.ready || 0,
+        available: w.available || 0,
+        status: w.status || 'HEALTHY',
+      }));
+      await repo.saveWorkloadHealth(workloadsToSave);
+    }
+
     return res.json({ status: 'ok', timestamp: now });
   } catch (err: any) {
     return res.status(500).json({ error: 'Heartbeat update failed' });
   }
 });
 
-// POST /api/v1/agent/events
-agentRouter.post('/events', requireClusterToken, async (req: AuthenticatedRequest, res: Response) => {
+// POST /api/v1/agent/events & /api/v1/agent/events/batch
+const handleEvents = async (req: AuthenticatedRequest, res: Response) => {
   const { events } = req.body;
   if (!Array.isArray(events)) {
     return res.status(400).json({ error: 'events must be an array' });
@@ -117,7 +196,10 @@ agentRouter.post('/events', requireClusterToken, async (req: AuthenticatedReques
   } catch (err: any) {
     return res.status(500).json({ error: 'Failed to process event telemetry' });
   }
-});
+};
+
+agentRouter.post('/events', requireClusterToken, handleEvents);
+agentRouter.post('/events/batch', requireClusterToken, handleEvents);
 
 // POST /api/v1/agent/nodes
 agentRouter.post('/nodes', requireClusterToken, async (req: AuthenticatedRequest, res: Response) => {
@@ -183,9 +265,9 @@ agentRouter.post('/workloads', requireClusterToken, async (req: AuthenticatedReq
   }
 });
 
-// POST /api/v1/agent/incidents
+// POST /api/v1/agent/incidents & /api/v1/agent/incidents/batch
 // Correlation and automated ticket creation
-agentRouter.post('/incidents', requireClusterToken, async (req: AuthenticatedRequest, res: Response) => {
+const handleIncidents = async (req: AuthenticatedRequest, res: Response) => {
   const { incidents } = req.body;
   if (!Array.isArray(incidents)) {
     return res.status(400).json({ error: 'incidents must be an array' });
@@ -333,7 +415,10 @@ agentRouter.post('/incidents', requireClusterToken, async (req: AuthenticatedReq
   } catch (err: any) {
     return res.status(500).json({ error: 'Failed to process incident telemetry', details: err.message });
   }
-});
+};
+
+agentRouter.post('/incidents', requireClusterToken, handleIncidents);
+agentRouter.post('/incidents/batch', requireClusterToken, handleIncidents);
 
 // GET /api/v1/agent/download-script
 agentRouter.get('/download-script', (req: Request, res: Response) => {

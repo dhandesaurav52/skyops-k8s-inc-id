@@ -219,27 +219,29 @@ if [ -n "$CONTAINER_ENGINE" ]; then
 fi
 
 # 8. Wait for Readiness Endpoint (non-blocking fallback)
-MAX_RETRIES=30
-RETRY_COUNT=0
-IS_READY=false
+if [ "${SKYOPS_SKIP_WAIT:-0}" != "1" ] && [ -n "$CONTAINER_ENGINE" ]; then
+  MAX_RETRIES=30
+  RETRY_COUNT=0
+  IS_READY=false
 
-while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-  if command -v curl &> /dev/null; then
-    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:${PORT}/ready" 2>/dev/null || echo "000")
-  elif command -v wget &> /dev/null; then
-    HTTP_CODE=$(wget -q -S -O /dev/null "http://127.0.0.1:${PORT}/ready" 2>&1 | grep "HTTP/" | awk '{print $2}' | tail -1 || echo "000")
-  else
-    HTTP_CODE="200"
-  fi
+  while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+    if command -v curl &> /dev/null; then
+      HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:${PORT}/ready" 2>/dev/null || echo "000")
+    elif command -v wget &> /dev/null; then
+      HTTP_CODE=$(wget -q -S -O /dev/null "http://127.0.0.1:${PORT}/ready" 2>&1 | grep "HTTP/" | awk '{print $2}' | tail -1 || echo "000")
+    else
+      HTTP_CODE="200"
+    fi
 
-  if [ "$HTTP_CODE" = "200" ]; then
-    IS_READY=true
-    break
-  fi
+    if [ "$HTTP_CODE" = "200" ]; then
+      IS_READY=true
+      break
+    fi
 
-  sleep 1
-  RETRY_COUNT=$((RETRY_COUNT + 1))
-done
+    sleep 1
+    RETRY_COUNT=$((RETRY_COUNT + 1))
+  done
+fi
 
 # 9. Terminal Output Experience
 if [ "$IS_INITIALIZED" = true ]; then

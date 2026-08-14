@@ -1,0 +1,79 @@
+{{- if .Values.agent.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "skyops.agentFullname" . }}
+  labels:
+    {{- include "skyops.agentLabels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.agent.replicaCount | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "skyops.agentSelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "skyops.agentSelectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "skyops.agentServiceAccountName" . }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+      containers:
+        - name: agent
+          image: "{{ .Values.agent.image.repository }}:{{ .Values.agent.image.tag }}"
+          imagePullPolicy: {{ .Values.agent.image.pullPolicy | default "IfNotPresent" }}
+          securityContext:
+            {{- toYaml .Values.agent.securityContext | nindent 12 }}
+          ports:
+            - name: http-metrics
+              containerPort: 8081
+              protocol: TCP
+          env:
+            - name: SKYOPS_SERVER_URL
+              value: {{ printf "http://%s:%d" (include "skyops.fullname" .) (int .Values.service.port) | quote }}
+            - name: SKYOPS_REGISTRATION_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "skyops.secretName" . }}
+                  key: AGENT_REGISTRATION_TOKEN
+            - name: SKYOPS_CLUSTER_NAME
+              value: {{ .Values.agent.clusterName | default "in-cluster" | quote }}
+            - name: PORT
+              value: "8081"
+            - name: COLLECTION_INTERVAL_SECONDS
+              value: "10"
+            - name: HEARTBEAT_INTERVAL_SECONDS
+              value: "15"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http-metrics
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http-metrics
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 2
+          resources:
+            {{- toYaml .Values.agent.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

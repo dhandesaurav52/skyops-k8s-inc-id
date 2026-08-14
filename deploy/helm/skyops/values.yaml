@@ -1,6 +1,10 @@
-# Default values for skyops control plane chart.
+# Default values for SkyOps Helm chart.
+# SkyOps is a self-hosted, Kubernetes-native incident management and observability platform.
 
-replicaCount: 2
+# ==============================================================================
+# 1. SkyOps Control Plane Configuration
+# ==============================================================================
+replicaCount: 1
 
 image:
   repository: ghcr.io/skyops/skyops
@@ -23,8 +27,8 @@ podAnnotations:
 
 podSecurityContext:
   runAsNonRoot: true
-  runAsUser: 1000
-  fsGroup: 1000
+  runAsUser: 10001
+  fsGroup: 10001
 
 securityContext:
   allowPrivilegeEscalation: false
@@ -37,20 +41,13 @@ service:
   type: ClusterIP
   port: 3000
 
-ingress:
+# Persistent storage for SkyOps Control Plane data and bootstrap security artifacts
+persistence:
   enabled: true
-  className: "nginx"
-  annotations:
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
-  hosts:
-    - host: skyops.example.com
-      paths:
-        - path: /
-          pathType: Prefix
-  tls:
-    - secretName: skyops-tls-cert
-      hosts:
-        - skyops.example.com
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 10Gi
+  mountPath: "/app/.data"
 
 resources:
   limits:
@@ -60,32 +57,102 @@ resources:
     cpu: 250m
     memory: 512Mi
 
-autoscaling:
-  enabled: false
-  minReplicas: 2
-  maxReplicas: 10
-  targetCPUUtilizationPercentage: 80
-
 env:
   DEPLOYMENT_MODE: "self-hosted"
   DATA_TELEMETRY_ENABLED: "false"
-  INITIAL_ADMIN_EMAIL: "admin@skyops.io"
-  APP_URL: "https://skyops.example.com"
+  APP_URL: ""
 
+# Cryptographic secrets configuration
+# If existingSecret is not provided and values are empty, secure CSPRNG secrets will be generated automatically.
 secrets:
-  JWT_SECRET: "change-this-to-a-very-secure-jwt-secret-string-at-least-32-chars"
-  INITIAL_ADMIN_PASSWORD: "SkyOpsProductionPass123!"
-  DATABASE_URL: "postgres://skyops:skyops_secure_password@skyops-postgresql:5432/skyops?sslmode=disable"
-  LICENSE_SIGNING_SECRET: "skyops-license-core-signing-secret-v1"
+  existingSecret: ""
+  JWT_SECRET: ""
+  SESSION_SECRET: ""
+  INTERNAL_ENCRYPTION_KEY: ""
+  LICENSE_SIGNING_SECRET: ""
+  AGENT_REGISTRATION_TOKEN: ""
+  DATABASE_URL: ""
   GEMINI_API_KEY: ""
 
+# ==============================================================================
+# 2. In-Cluster PostgreSQL (StatefulSet)
+# ==============================================================================
 postgresql:
   enabled: true
+  image:
+    repository: postgres
+    tag: "16-alpine"
+    pullPolicy: IfNotPresent
   auth:
     username: skyops
-    password: skyops_secure_password
     database: skyops
-  primary:
-    persistence:
-      enabled: true
-      size: 20Gi
+    password: "" # auto-generated if left empty
+    existingSecret: ""
+  persistence:
+    enabled: true
+    storageClass: ""
+    accessMode: ReadWriteOnce
+    size: 20Gi
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 256Mi
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 70
+    allowPrivilegeEscalation: false
+
+# ==============================================================================
+# 3. In-Cluster SkyOps Agent (Auto-monitors the local cluster)
+# ==============================================================================
+agent:
+  enabled: true
+  replicaCount: 1
+  clusterName: "in-cluster"
+  image:
+    repository: ghcr.io/skyops/agent
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+  serviceAccount:
+    create: true
+    annotations: {}
+    name: ""
+  rbac:
+    create: true
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+
+# ==============================================================================
+# 4. Ingress Configuration (Optional)
+# ==============================================================================
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: skyops.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# Node scheduling
+nodeSelector: {}
+tolerations: []
+affinity: {}
