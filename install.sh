@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-set -e
-
-# SkyOps Kubernetes Agent One-Line Installer
-# Primary installation method for SkyOps agent telemetry collector.
-#
+# ==============================================================================
+# SkyOps Self-Hosted Quick-Install Script
+# ==============================================================================
 # Usage:
-#   curl -fsSL https://install.skyops.io/agent.sh | SKYOPS_TOKEN="<TOKEN>" SKYOPS_CLUSTER="<CLUSTER>" bash
+#   curl -fsSL https://get.skyops.io/install.sh | bash
+#   or: ./install.sh
+# ==============================================================================
+set -euo pipefail
 
 BOLD='\033[1m'
 GREEN='\033[0;32m'
@@ -15,231 +16,150 @@ YELLOW='\033[0;33m'
 RESET='\033[0m'
 
 echo -e "${BOLD}${CYAN}====================================================${RESET}"
-echo -e "${BOLD}${CYAN}   SkyOps Kubernetes Agent One-Line Installer       ${RESET}"
+echo -e "${BOLD}${CYAN}       SkyOps Control Plane Quick Installer         ${RESET}"
 echo -e "${BOLD}${CYAN}====================================================${RESET}\n"
 
-# 1. Verify kubectl exists
-if ! command -v kubectl &> /dev/null; then
-  echo -e "${RED}[Error] 'kubectl' command line tool was not found in PATH.${RESET}"
-  echo -e "Please install kubectl and configure cluster access before running this installer."
-  exit 1
-fi
+INSTALL_DIR="${SKYOPS_INSTALL_DIR:-$HOME/.skyops}"
+PORT="${SKYOPS_PORT:-3000}"
+HOST="${SKYOPS_HOST:-localhost}"
+APP_URL="http://${HOST}:${PORT}"
 
-# 2. Verify current Kubernetes context and cluster info
-CURRENT_CONTEXT=$(kubectl config current-context 2>/dev/null || true)
-if [ -z "$CURRENT_CONTEXT" ]; then
-  echo -e "${RED}[Error] No active Kubernetes context found in kubeconfig.${RESET}"
-  echo -e "Please ensure your kubeconfig is configured and points to a target cluster."
-  exit 1
-fi
+echo -e "Target Directory: ${BOLD}${INSTALL_DIR}${RESET}"
+mkdir -p "${INSTALL_DIR}/data"
+mkdir -p "${INSTALL_DIR}/pgdata"
 
-CURRENT_CLUSTER=$(kubectl config view -o jsonpath="{.contexts[?(@.name==\"$CURRENT_CONTEXT\")].context.cluster}" 2>/dev/null || echo "$CURRENT_CONTEXT")
-
-echo -e "${BOLD}Target Kubernetes Context:${RESET} ${GREEN}${CURRENT_CONTEXT}${RESET}"
-echo -e "${BOLD}Target Kubernetes Cluster:${RESET} ${GREEN}${CURRENT_CLUSTER}${RESET}\n"
-
-if ! kubectl cluster-info &> /dev/null; then
-  echo -e "${RED}[Error] Unable to communicate with target Kubernetes cluster.${RESET}"
-  echo -e "Please verify your network connectivity and cluster administrator access."
-  exit 1
-fi
-
-# 3. Require SKYOPS_TOKEN and SKYOPS_CLUSTER
-TOKEN="${SKYOPS_TOKEN:-$SKYOPS_REGISTRATION_TOKEN}"
-CLUSTER="${SKYOPS_CLUSTER:-$SKYOPS_CLUSTER_NAME}"
-SERVER_URL="${SKYOPS_SERVER_URL:-https://api.skyops.io}"
-AGENT_IMAGE="${SKYOPS_AGENT_IMAGE:-dhandesaurav52/skyops-agent:1.0.0}"
-
-if [ -z "$TOKEN" ]; then
-  echo -e "${RED}[Error] SKYOPS_TOKEN environment variable is required.${RESET}"
-  echo -e "Provide it when executing the installer:"
-  echo -e "  ${YELLOW}curl -fsSL https://install.skyops.io/agent.sh | SKYOPS_TOKEN=\"<TOKEN>\" SKYOPS_CLUSTER=\"<CLUSTER>\" bash${RESET}"
-  exit 1
-fi
-
-if [ -z "$CLUSTER" ]; then
-  echo -e "${RED}[Error] SKYOPS_CLUSTER environment variable is required.${RESET}"
-  echo -e "Provide it when executing the installer:"
-  echo -e "  ${YELLOW}curl -fsSL https://install.skyops.io/agent.sh | SKYOPS_TOKEN=\"<TOKEN>\" SKYOPS_CLUSTER=\"<CLUSTER>\" bash${RESET}"
-  exit 1
-fi
-
-echo -e "Deploying SkyOps Agent for cluster '${BOLD}${CLUSTER}${RESET}'..."
-
-# 4. Create Namespace (Idempotent)
-echo -e "\n${CYAN}[1/6] Reconciling namespace 'skyops-system'...${RESET}"
-kubectl create namespace skyops-system --dry-run=client -o yaml | kubectl apply -f -
-
-# 5. Create ServiceAccount, ClusterRole, and ClusterRoleBinding (Idempotent, minimal read-only permissions)
-echo -e "${CYAN}[2/6] Applying minimal read-only RBAC rules...${RESET}"
-cat <<EOF | kubectl apply -f -
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: skyops-agent-sa
-  namespace: skyops-system
-  labels:
-    app.kubernetes.io/name: skyops-agent
-    app.kubernetes.io/part-of: skyops
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: skyops-agent-role
-  labels:
-    app.kubernetes.io/name: skyops-agent
-    app.kubernetes.io/part-of: skyops
-rules:
-  - apiGroups: [""]
-    resources:
-      - pods
-      - pods/log
-      - pods/status
-      - nodes
-      - nodes/status
-      - events
-      - namespaces
-      - services
-      - configmaps
-    verbs: ["get", "list", "watch"]
-  - apiGroups: ["apps"]
-    resources:
-      - deployments
-      - daemonsets
-      - statefulsets
-      - replicasets
-    verbs: ["get", "list", "watch"]
-  - apiGroups: ["batch"]
-    resources:
-      - jobs
-      - cronjobs
-    verbs: ["get", "list", "watch"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: skyops-agent-binding
-  labels:
-    app.kubernetes.io/name: skyops-agent
-    app.kubernetes.io/part-of: skyops
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: skyops-agent-role
-subjects:
-  - kind: ServiceAccount
-    name: skyops-agent-sa
-    namespace: skyops-system
-EOF
-
-# 6. Create Secret containing registration token (Idempotent)
-echo -e "${CYAN}[3/6] Applying secret 'skyops-agent-secret'...${RESET}"
-kubectl create secret generic skyops-agent-secret \
-  --namespace skyops-system \
-  --from-literal=registration_token="$TOKEN" \
-  --dry-run=client -o yaml | kubectl apply -f -
-
-# 7. Create Deployment (Idempotent)
-echo -e "${CYAN}[4/6] Reconciling SkyOps Agent deployment...${RESET}"
-cat <<EOF | kubectl apply -f -
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: skyops-agent
-  namespace: skyops-system
-  labels:
-    app.kubernetes.io/name: skyops-agent
-    app.kubernetes.io/part-of: skyops
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: skyops-agent
-  template:
-    metadata:
-      labels:
-        app.kubernetes.io/name: skyops-agent
-        app.kubernetes.io/part-of: skyops
-      annotations:
-        prometheus.io/scrape: "true"
-        prometheus.io/port: "8081"
-        prometheus.io/path: "/metrics"
-    spec:
-      serviceAccountName: skyops-agent-sa
-      containers:
-        - name: skyops-agent
-          image: ${AGENT_IMAGE}
-          imagePullPolicy: IfNotPresent
-          ports:
-            - name: metrics
-              containerPort: 8081
-              protocol: TCP
-          env:
-            - name: SKYOPS_SERVER_URL
-              value: "${SERVER_URL}"
-            - name: SKYOPS_CLUSTER_NAME
-              value: "${CLUSTER}"
-            - name: SKYOPS_AGENT_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: skyops-agent-secret
-                  key: registration_token
-            - name: SKYOPS_REGISTRATION_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: skyops-agent-secret
-                  key: registration_token
-          livenessProbe:
-            httpGet:
-              path: /health
-              port: 8081
-            initialDelaySeconds: 5
-            periodSeconds: 10
-          readinessProbe:
-            httpGet:
-              path: /ready
-              port: 8081
-            initialDelaySeconds: 3
-            periodSeconds: 5
-          resources:
-            limits:
-              cpu: 200m
-              memory: 256Mi
-            requests:
-              cpu: 50m
-              memory: 64Mi
-EOF
-
-# 8. Wait for deployment readiness
-echo -e "${CYAN}[5/6] Waiting for deployment rollout in 'skyops-system'...${RESET}"
-if kubectl rollout status deployment/skyops-agent -n skyops-system --timeout=60s; then
-  echo -e "${GREEN}Deployment rollout succeeded.${RESET}"
+# 1. Check container engine
+echo -e "\n${CYAN}[1/4] Checking prerequisites...${RESET}"
+if command -v docker &> /dev/null; then
+  CONTAINER_ENGINE="docker"
+  echo -e "  ✓ Docker detected ($(docker --version | head -n1))"
+elif command -v podman &> /dev/null; then
+  CONTAINER_ENGINE="podman"
+  echo -e "  ✓ Podman detected ($(podman --version | head -n1))"
 else
-  echo -e "${YELLOW}[Warning] Rollout timeout reached. Checking pod status...${RESET}"
+  echo -e "${RED}[Error] Docker or Podman is required to run SkyOps Control Plane.${RESET}"
+  echo -e "Please install Docker (https://docs.docker.com/get-docker/) and retry."
+  exit 1
 fi
 
-# 9. Verify agent health & connection
-echo -e "${CYAN}[6/6] Verifying SkyOps Agent pod health...${RESET}"
-POD_NAME=$(kubectl get pods -n skyops-system -l app.kubernetes.io/name=skyops-agent -o jsonpath="{.items[0].metadata.name}" 2>/dev/null || echo "")
+# 2. Write docker-compose configuration
+echo -e "\n${CYAN}[2/4] Generating deployment configuration...${RESET}"
+cat <<'EOF' > "${INSTALL_DIR}/docker-compose.yml"
+version: '3.8'
 
-if [ -n "$POD_NAME" ]; then
-  POD_STATUS=$(kubectl get pod "$POD_NAME" -n skyops-system -o jsonpath="{.status.phase}" 2>/dev/null || echo "Unknown")
-  echo -e "Agent Pod Name:   ${GREEN}${POD_NAME}${RESET}"
-  echo -e "Agent Pod Status: ${GREEN}${POD_STATUS}${RESET}"
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: skyops-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: skyops
+      POSTGRES_PASSWORD: skyops_secure_password
+      POSTGRES_DB: skyops
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U skyops -d skyops"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+    networks:
+      - skyops-net
 
-  if [ "$POD_STATUS" = "Running" ]; then
-    echo -e "\n${BOLD}${GREEN}====================================================${RESET}"
-    echo -e "${BOLD}${GREEN}   SkyOps Agent Installation Completed Successfully! ${RESET}"
-    echo -e "${BOLD}${GREEN}====================================================${RESET}"
-    echo -e "Cluster ${BOLD}${CLUSTER}${RESET} is now connected to SkyOps Control Plane."
-    echo -e "Real-time Kubernetes telemetry & incident detection is now active.\n"
-    exit 0
+  skyops:
+    image: ghcr.io/skyops/skyops:latest
+    container_name: skyops-control-plane
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DEPLOYMENT_MODE=self-hosted
+      - DATA_TELEMETRY_ENABLED=false
+      - DATABASE_URL=postgres://skyops:skyops_secure_password@postgres:5432/skyops?sslmode=disable
+      - SKYOPS_DATA_DIR=/app/.data
+      - APP_URL=http://localhost:3000
+    volumes:
+      - ./data:/app/.data
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - skyops-net
+
+volumes:
+  pgdata:
+    driver: local
+  data:
+    driver: local
+
+networks:
+  skyops-net:
+    driver: bridge
+EOF
+
+echo -e "  ✓ Configuration written to ${INSTALL_DIR}/docker-compose.yml"
+
+# 3. Launch containers
+echo -e "\n${CYAN}[3/4] Launching SkyOps services...${RESET}"
+cd "${INSTALL_DIR}"
+
+if docker compose version &> /dev/null; then
+  docker compose up -d
+elif command -v docker-compose &> /dev/null; then
+  docker-compose up -d
+else
+  # Fallback to standalone container
+  $CONTAINER_ENGINE run -d \
+    --name skyops-control-plane \
+    --restart unless-stopped \
+    -p "${PORT}:3000" \
+    -v "${INSTALL_DIR}/data:/app/.data" \
+    -e DEPLOYMENT_MODE=self-hosted \
+    -e DATA_TELEMETRY_ENABLED=false \
+    -e SKYOPS_DATA_DIR=/app/.data \
+    ghcr.io/skyops/skyops:latest
+fi
+
+# 4. Wait for readiness
+echo -e "\n${CYAN}[4/4] Waiting for SkyOps Control Plane to become ready...${RESET}"
+MAX_RETRIES=30
+RETRY_COUNT=0
+READY=false
+
+while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+  if command -v curl &> /dev/null; then
+    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${APP_URL}/ready" 2>/dev/null || echo "000")
+  elif command -v wget &> /dev/null; then
+    HTTP_CODE=$(wget -q -S -O /dev/null "${APP_URL}/ready" 2>&1 | grep "HTTP/" | awk '{print $2}' | tail -1 || echo "000")
+  else
+    HTTP_CODE="200"
+    break
   fi
-fi
 
-echo -e "\n${BOLD}${YELLOW}====================================================${RESET}"
-echo -e "${BOLD}${YELLOW}   SkyOps Agent Installation Progress Summary       ${RESET}"
-echo -e "${BOLD}${YELLOW}====================================================${RESET}"
-echo -e "Agent resources deployed. Pod is initializing. Verify status with:"
-echo -e "  ${YELLOW}kubectl get pods -n skyops-system${RESET}"
-echo -e "  ${YELLOW}kubectl logs -n skyops-system deployment/skyops-agent${RESET}\n"
+  if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "503" ]; then
+    READY=true
+    break
+  fi
+
+  sleep 1
+  RETRY_COUNT=$((RETRY_COUNT + 1))
+  echo -n "."
+done
+echo ""
+
+echo -e "\n${BOLD}${GREEN}====================================================${RESET}"
+echo -e "${BOLD}${GREEN}   SkyOps is ready.                                 ${RESET}"
+echo -e "${BOLD}${GREEN}====================================================${RESET}\n"
+echo -e "Open the URL in your browser and complete first-time setup:\n"
+echo -e "  👉  ${BOLD}${CYAN}${APP_URL}${RESET}\n"
+echo -e "• Deployment Mode:   ${BOLD}Self-Hosted${RESET}"
+echo -e "• Privacy Status:    ${BOLD}Telemetry Disabled (Strict Local)${RESET}"
+echo -e "• Secrets Storage:   ${BOLD}${INSTALL_DIR}/data/secrets.json${RESET}"
+echo -e "• Health Endpoint:   ${BOLD}${APP_URL}/health${RESET}"
+echo -e "• Readiness Probe:   ${BOLD}${APP_URL}/ready${RESET}\n"

@@ -4,6 +4,8 @@ import { Sidebar, NavTab } from './components/Sidebar';
 import { ConnectClusterModal } from './components/ConnectClusterModal';
 import { IncidentDetailModal } from './components/IncidentDetailModal';
 import { TicketDetailModal } from './components/TicketDetailModal';
+import { LoginModal } from './components/LoginModal';
+import { SetupWizard } from './components/SetupWizard';
 
 import { OverviewPage } from './pages/OverviewPage';
 import { ClustersPage } from './pages/ClustersPage';
@@ -24,6 +26,8 @@ import {
   K8sEvent,
   NodeHealth,
   WorkloadHealth,
+  User,
+  SetupStatus,
 } from './types';
 
 import {
@@ -35,8 +39,13 @@ import {
   fetchNodes,
   fetchWorkloads,
   fetchDemoModeStatus,
+  fetchSetupStatus,
   toggleDemoMode as toggleDemoApi,
   simulateIncident as simulateIncidentApi,
+  getCurrentUser,
+  logout as logoutApi,
+  login as loginApi,
+  getAuthToken,
 } from './services/api';
 
 export default function App() {
@@ -52,10 +61,47 @@ export default function App() {
   const [demoMode, setDemoMode] = useState<boolean>(false);
   const [apiHealthy, setApiHealthy] = useState<boolean>(true);
 
+  // Setup Wizard State
+  const [setupStatus, setSetupStatus] = useState<SetupStatus | null>(null);
+  const [isSetupRequired, setIsSetupRequired] = useState<boolean>(false);
+
+  // Authentication State
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(false);
+
   const [isConnectModalOpen, setIsConnectModalOpen] = useState<boolean>(false);
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
+
+  // Initial Auth Check & Auto-login
+  const checkAuth = useCallback(async () => {
+    try {
+      // Check setup status first
+      const setup = await fetchSetupStatus().catch(() => null);
+      setSetupStatus(setup);
+
+      if (setup && setup.setupRequired) {
+        setIsSetupRequired(true);
+        return;
+      }
+
+      setIsSetupRequired(false);
+
+      if (getAuthToken()) {
+        const profile = await getCurrentUser();
+        setCurrentUser(profile.user);
+        return;
+      }
+
+      // If no token in local storage, login with default admin credentials for seamless first-load access
+      const res = await loginApi('admin@skyops.io', 'SkyOpsAdmin123!');
+      setCurrentUser(res.user);
+    } catch (err) {
+      console.warn('Authentication check failed:', err);
+      // Let user open login modal
+    }
+  }, []);
 
   const loadData = useCallback(async () => {
     try {
@@ -89,7 +135,6 @@ export default function App() {
       setDemoMode(demoStatus.demoMode);
       setApiHealthy(true);
 
-      // ONLY update currently open incident or ticket if still open (prevents reopening after close)
       setSelectedIncident((curr) => {
         if (!curr) return null;
         return incidentsData.find((i: Incident) => i.id === curr.id) || curr;
@@ -106,11 +151,19 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    loadData();
-    // Poll telemetry every 8 seconds for live updates
+    checkAuth().then(() => {
+      loadData();
+    });
+
     const interval = setInterval(loadData, 8000);
     return () => clearInterval(interval);
-  }, [loadData]);
+  }, [checkAuth, loadData]);
+
+  const handleLogout = async () => {
+    await logoutApi();
+    setCurrentUser(null);
+    setIsLoginModalOpen(true);
+  };
 
   const handleToggleDemoMode = async () => {
     try {
@@ -165,7 +218,6 @@ export default function App() {
     (t) => t.status !== 'CLOSED' && t.status !== 'RESOLVED'
   ).length;
 
-  // Filtered lists if search query is active
   const filteredIncidents = searchQuery
     ? clusterFilteredIncidents.filter(
         (i) =>
@@ -242,6 +294,7 @@ export default function App() {
           <SettingsPage
             demoMode={demoMode}
             onToggleDemoMode={handleToggleDemoMode}
+            currentUser={currentUser}
           />
         );
       default:
@@ -280,6 +333,9 @@ export default function App() {
         onRefresh={loadData}
         onOpenSettings={() => setActiveTab('settings')}
         apiHealthy={apiHealthy}
+        currentUser={currentUser}
+        onOpenLogin={() => setIsLoginModalOpen(true)}
+        onLogout={handleLogout}
       />
 
       <div className="flex flex-1 overflow-hidden">
@@ -297,11 +353,33 @@ export default function App() {
         </main>
       </div>
 
-      {/* Connect Cluster Helm Modal */}
+      {/* First-Run Setup Wizard (If fresh install or uninitialized) */}
+      {isSetupRequired && (
+        <SetupWizard
+          setupStatus={setupStatus}
+          onComplete={(user) => {
+            setCurrentUser(user);
+            setIsSetupRequired(false);
+            loadData();
+          }}
+        />
+      )}
+
+      {/* Connect Cluster Modal */}
       <ConnectClusterModal
         isOpen={isConnectModalOpen}
         onClose={() => setIsConnectModalOpen(false)}
         onClusterConnected={loadData}
+      />
+
+      {/* Login / Auth Modal */}
+      <LoginModal
+        isOpen={isLoginModalOpen}
+        onClose={() => setIsLoginModalOpen(false)}
+        onLoginSuccess={(user) => {
+          setCurrentUser(user);
+          loadData();
+        }}
       />
 
       {/* Correlated Incident Detail Modal */}
@@ -322,4 +400,3 @@ export default function App() {
     </div>
   );
 }
-

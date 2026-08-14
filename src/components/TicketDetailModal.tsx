@@ -148,7 +148,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
     setSubmittingComment(true);
     try {
-      await addTicketComment(ticket.id, authorName, newComment.trim());
+      await addTicketComment(ticket.id, newComment.trim());
       setNewComment('');
       onTicketUpdated();
     } catch (e) {

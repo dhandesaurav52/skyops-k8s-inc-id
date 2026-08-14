@@ -17,6 +17,118 @@ export type TicketStatus =
 
 export type ClusterStatus = 'CONNECTED' | 'DEGRADED' | 'OFFLINE' | 'UNKNOWN';
 
+export type Role = 'ADMIN' | 'SRE' | 'DEVELOPER' | 'VIEWER';
+
+export type PlanType = 'COMMUNITY' | 'PRO' | 'ENTERPRISE';
+
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  role: Role;
+  organization_id: string;
+  organization_name?: string;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LicenseFeatures {
+  advanced_rca: boolean;
+  sso_enabled: boolean;
+  audit_retention_days: number;
+  custom_runbooks: boolean;
+  data_telemetry: boolean;
+  unlimited_tickets: boolean;
+}
+
+export interface License {
+  id?: string;
+  plan: PlanType;
+  max_clusters: number;
+  max_users: number;
+  current_clusters?: number;
+  current_users?: number;
+  expires_at: string;
+  issued_at?: string;
+  features: LicenseFeatures;
+  is_valid?: boolean;
+}
+
+export interface SystemInfo {
+  product: string;
+  version: string;
+  deploymentMode: 'self-hosted' | 'cloud';
+  uptimeSeconds?: number;
+  dataPrivacy: {
+    telemetryEnabled: boolean;
+    mode: 'STRICT_LOCAL_ONLY' | 'ANONYMIZED_TELEMETRY';
+    description: string;
+  };
+  database: {
+    type: 'postgres' | 'memory';
+    healthy: boolean;
+    details?: string;
+  };
+  secrets?: {
+    jwtSecretSource: 'ENVIRONMENT' | 'PERSISTED' | 'GENERATED_EPHEMERAL';
+    jwtSecretConfigured: boolean;
+    licenseSecretSource: 'ENVIRONMENT' | 'PERSISTED' | 'GENERATED_EPHEMERAL';
+    licenseSecretConfigured: boolean;
+    encryptionKeySource: 'ENVIRONMENT' | 'PERSISTED' | 'GENERATED_EPHEMERAL';
+    isSecretsFilePersisted: boolean;
+    secretsFilePath?: string;
+  };
+  runtime?: {
+    nodeVersion: string;
+    platform: string;
+    arch: string;
+    memoryUsageMb: number;
+  };
+  limits: {
+    plan: string;
+    maxClusters: number;
+    maxUsers: number;
+  };
+  authenticated: boolean;
+  userRole: Role | null;
+  serverTime: string;
+}
+
+export interface SetupStatus {
+  isInitialized: boolean;
+  setupRequired: boolean;
+  deploymentMode: 'self-hosted' | 'cloud';
+  telemetryEnabled: boolean;
+  database: {
+    type: string;
+    healthy: boolean;
+  };
+  secrets: {
+    jwtSource: string;
+    licenseSource: string;
+    isPersisted: boolean;
+  };
+  version: string;
+  serverTime: string;
+}
+
+export interface SetupInitPayload {
+  adminName: string;
+  adminEmail: string;
+  adminPassword: string;
+  organizationName: string;
+  licenseKey?: string;
+  seedSampleData?: boolean;
+}
+
 export interface TimelineItem {
   timestamp: string;
   title: string;
@@ -134,6 +246,7 @@ export interface AuditLog {
   resource: string;
   details: string;
   timestamp: string;
+  ip_address?: string;
 }
 
 export interface K8sEvent {

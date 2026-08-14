@@ -1,0 +1,24 @@
+apiVersion: v2
+name: skyops
+description: A production-quality Kubernetes incident-management and automated remediation platform.
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - kubernetes
+  - incident-management
+  - sre
+  - rca
+  - alerting
+  - remediation
+home: https://skyops.io
+sources:
+  - https://github.com/skyops/skyops
+maintainers:
+  - name: SkyOps Core Team
+    email: support@skyops.io
+dependencies:
+  - name: postgresql
+    version: 15.5.34
+    repository: https://charts.bitnami.com/bitnami
+    condition: postgresql.enabled

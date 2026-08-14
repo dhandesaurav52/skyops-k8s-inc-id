@@ -1,0 +1,91 @@
+# Default values for skyops control plane chart.
+
+replicaCount: 2
+
+image:
+  repository: ghcr.io/skyops/skyops
+  pullPolicy: IfNotPresent
+  tag: "1.0.0"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "3000"
+  prometheus.io/path: "/metrics"
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  type: ClusterIP
+  port: 3000
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  hosts:
+    - host: skyops.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: skyops-tls-cert
+      hosts:
+        - skyops.example.com
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 250m
+    memory: 512Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+
+env:
+  DEPLOYMENT_MODE: "self-hosted"
+  DATA_TELEMETRY_ENABLED: "false"
+  INITIAL_ADMIN_EMAIL: "admin@skyops.io"
+  APP_URL: "https://skyops.example.com"
+
+secrets:
+  JWT_SECRET: "change-this-to-a-very-secure-jwt-secret-string-at-least-32-chars"
+  INITIAL_ADMIN_PASSWORD: "SkyOpsProductionPass123!"
+  DATABASE_URL: "postgres://skyops:skyops_secure_password@skyops-postgresql:5432/skyops?sslmode=disable"
+  LICENSE_SIGNING_SECRET: "skyops-license-core-signing-secret-v1"
+  GEMINI_API_KEY: ""
+
+postgresql:
+  enabled: true
+  auth:
+    username: skyops
+    password: skyops_secure_password
+    database: skyops
+  primary:
+    persistence:
+      enabled: true
+      size: 20Gi

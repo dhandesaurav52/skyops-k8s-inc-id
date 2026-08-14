@@ -7,8 +7,13 @@ import {
   PlusCircle,
   ChevronDown,
   Layers,
+  User as UserIcon,
+  Lock,
+  LogOut,
+  ShieldCheck,
+  Building,
 } from 'lucide-react';
-import { Cluster } from '../types';
+import { Cluster, User } from '../types';
 
 interface HeaderProps {
   demoMode: boolean;
@@ -24,6 +29,9 @@ interface HeaderProps {
   onRefresh: () => void;
   onOpenSettings?: () => void;
   apiHealthy?: boolean;
+  currentUser: User | null;
+  onOpenLogin: () => void;
+  onLogout: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -40,17 +48,34 @@ export const Header: React.FC<HeaderProps> = ({
   onRefresh,
   onOpenSettings,
   apiHealthy = true,
+  currentUser,
+  onOpenLogin,
+  onLogout,
 }) => {
   const [isClusterDropdownOpen, setIsClusterDropdownOpen] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
 
   const selectedClusterName =
     selectedClusterId === null
       ? 'ALL CLUSTERS'
       : clusters.find((c) => c.id === selectedClusterId)?.name || 'ALL CLUSTERS';
 
+  const getRoleBadgeStyle = (role?: string) => {
+    switch (role) {
+      case 'ADMIN':
+        return 'bg-purple-950/60 text-purple-300 border-purple-500/40';
+      case 'SRE':
+        return 'bg-cyan-950/60 text-cyan-300 border-cyan-500/40';
+      case 'DEVELOPER':
+        return 'bg-emerald-950/60 text-emerald-300 border-emerald-500/40';
+      default:
+        return 'bg-slate-900 text-slate-400 border-slate-700';
+    }
+  };
+
   return (
-    <header className="bg-[#090d14] border-b border-[#161d28] text-slate-100 px-4 py-2.5 flex items-center justify-between sticky top-0 z-40 select-none">
-      {/* Left section: Cluster Dropdown & API Status */}
+    <header className="bg-[#090d14] border-b border-[#161d28] text-slate-100 px-4 py-2 flex items-center justify-between sticky top-0 z-40 select-none">
+      {/* Left section: Cluster Dropdown & Deployment Badges */}
       <div className="flex items-center gap-3">
         {/* Cluster Filter Dropdown */}
         <div className="relative">
@@ -64,7 +89,7 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
 
           {isClusterDropdownOpen && (
-            <div className="absolute left-0 mt-1.5 w-60 bg-[#0d1420] border border-[#1e2d42] rounded-md shadow-2xl z-50 py-1 font-mono text-xs">
+            <div className="absolute left-0 mt-1.5 w-64 bg-[#0d1420] border border-[#1e2d42] rounded-md shadow-2xl z-50 py-1 font-mono text-xs">
               <button
                 onClick={() => {
                   onSelectCluster(null);
@@ -109,6 +134,12 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
 
+        {/* Deployment Mode Badge */}
+        <div className="hidden lg:flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-mono font-medium border bg-[#0c121c] border-[#1e293b] text-slate-300">
+          <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
+          <span>SELF-HOSTED CORE</span>
+        </div>
+
         {/* API Status Pill */}
         <div
           className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-mono font-semibold border ${
@@ -118,24 +149,24 @@ export const Header: React.FC<HeaderProps> = ({
           }`}
         >
           <span className={`w-1.5 h-1.5 rounded-full ${apiHealthy ? 'bg-emerald-400' : 'bg-rose-500 animate-pulse'}`}></span>
-          <span>{apiHealthy ? 'API ONLINE' : 'API OFFLINE'}</span>
+          <span>{apiHealthy ? 'CONTROL PLANE READY' : 'API DISCONNECTED'}</span>
         </div>
       </div>
 
       {/* Center Search Bar */}
-      <div className="hidden md:flex items-center relative w-96 max-w-md mx-4">
+      <div className="hidden md:flex items-center relative w-80 lg:w-96 mx-4">
         <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3" />
         <input
           type="text"
           value={searchQuery}
           onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="Search incidents, pods, namespaces, categories..."
+          placeholder="Search incidents, pods, namespaces..."
           className="w-full bg-[#0c121c] border border-[#1c2636] focus:border-cyan-500/50 rounded pl-9 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none font-mono"
         />
       </div>
 
-      {/* Right Controls */}
-      <div className="flex items-center gap-2">
+      {/* Right Controls: User Profile & Actions */}
+      <div className="flex items-center gap-2.5">
         {/* Active Incidents Badge */}
         <div
           className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-mono font-bold border ${
@@ -148,17 +179,17 @@ export const Header: React.FC<HeaderProps> = ({
           <span>{activeIncidentsCount} ACTIVE</span>
         </div>
 
-        {/* Inject Signal / Simulate Failure CTA */}
+        {/* Inject Signal Action */}
         <button
           onClick={onSimulateIncident}
           className="flex items-center gap-1.5 bg-[#0a1829] hover:bg-[#0f243d] text-cyan-400 border border-cyan-500/40 hover:border-cyan-500/70 px-3 py-1.5 rounded text-xs font-mono font-bold transition-colors shadow-[0_0_10px_rgba(6,182,212,0.1)]"
-          title="Inject synthetic telemetry anomaly signal to test automated incident correlation"
+          title="Inject synthetic failure telemetry signal"
         >
           <PlusCircle className="w-3.5 h-3.5 text-cyan-400" />
-          <span className="tracking-wide">INJECT SIGNAL</span>
+          <span className="tracking-wide hidden sm:inline">INJECT SIGNAL</span>
         </button>
 
-        {/* Refresh Action Button */}
+        {/* Refresh Action */}
         <button
           onClick={onRefresh}
           className="p-1.5 rounded bg-[#0c121c] hover:bg-[#141d2d] border border-[#1c2636] text-slate-400 hover:text-slate-200 transition-colors"
@@ -167,18 +198,85 @@ export const Header: React.FC<HeaderProps> = ({
           <RefreshCw className="w-4 h-4" />
         </button>
 
-        {/* Settings / Modal */}
-        {onOpenSettings && (
-          <button
-            onClick={onOpenSettings}
-            className="p-1.5 rounded bg-[#0c121c] hover:bg-[#141d2d] border border-[#1c2636] text-slate-400 hover:text-slate-200 transition-colors"
-            title="System Settings"
-          >
-            <Settings className="w-4 h-4" />
-          </button>
-        )}
+        {/* User Account / Login Dropdown */}
+        <div className="relative">
+          {currentUser ? (
+            <button
+              onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+              className="flex items-center gap-2 bg-[#0c121c] hover:bg-[#121a28] border border-[#1e293b] text-slate-200 pl-2.5 pr-2 py-1 rounded text-xs font-mono transition-colors"
+            >
+              <div className="w-5 h-5 rounded-full bg-cyan-500/20 text-cyan-400 flex items-center justify-center font-bold text-[10px]">
+                {currentUser.name ? currentUser.name.charAt(0) : 'U'}
+              </div>
+              <div className="text-left hidden sm:block">
+                <span className="text-[11px] font-semibold block text-slate-200 leading-tight max-w-[90px] truncate">
+                  {currentUser.name}
+                </span>
+              </div>
+              <span className={`px-1.5 py-0.2 text-[9px] font-bold rounded border ${getRoleBadgeStyle(currentUser.role)}`}>
+                {currentUser.role}
+              </span>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-0.5" />
+            </button>
+          ) : (
+            <button
+              onClick={onOpenLogin}
+              className="flex items-center gap-1.5 bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 border border-cyan-500/40 px-3 py-1.5 rounded text-xs font-mono font-bold transition-colors"
+            >
+              <Lock className="w-3.5 h-3.5" />
+              <span>LOG IN</span>
+            </button>
+          )}
+
+          {isUserMenuOpen && currentUser && (
+            <div className="absolute right-0 mt-1.5 w-64 bg-[#0d1420] border border-[#1e2d42] rounded-md shadow-2xl z-50 py-2 font-mono text-xs">
+              <div className="px-3 py-2 border-b border-[#1a2638]">
+                <div className="font-bold text-slate-200">{currentUser.name}</div>
+                <div className="text-[11px] text-slate-400 truncate">{currentUser.email}</div>
+                <div className="mt-1 flex items-center gap-1.5 text-[10px] text-cyan-400">
+                  <Building className="w-3 h-3 text-cyan-400" />
+                  <span>{currentUser.organization_name || 'Acme Cloud Eng'}</span>
+                </div>
+              </div>
+
+              <button
+                onClick={() => {
+                  setIsUserMenuOpen(false);
+                  onOpenSettings && onOpenSettings();
+                }}
+                className="w-full text-left px-3 py-2 text-slate-300 hover:bg-[#152033] flex items-center gap-2"
+              >
+                <Settings className="w-3.5 h-3.5 text-slate-400" />
+                <span>Organization & Users</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setIsUserMenuOpen(false);
+                  onOpenLogin();
+                }}
+                className="w-full text-left px-3 py-2 text-slate-300 hover:bg-[#152033] flex items-center gap-2"
+              >
+                <UserIcon className="w-3.5 h-3.5 text-slate-400" />
+                <span>Switch Account / Role</span>
+              </button>
+
+              <div className="border-t border-[#1a2638] my-1"></div>
+
+              <button
+                onClick={() => {
+                  setIsUserMenuOpen(false);
+                  onLogout();
+                }}
+                className="w-full text-left px-3 py-2 text-rose-400 hover:bg-[#152033] flex items-center gap-2 font-bold"
+              >
+                <LogOut className="w-3.5 h-3.5 text-rose-400" />
+                <span>Log Out</span>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </header>
   );
 };
-

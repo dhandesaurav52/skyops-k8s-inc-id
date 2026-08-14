@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  # Optional PostgreSQL bundled service.
+  # If you prefer external Postgres or embedded storage, comment this out or override DATABASE_URL.
+  postgres:
+    image: postgres:16-alpine
+    container_name: skyops-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-skyops}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-skyops_secure_password}
+      POSTGRES_DB: ${POSTGRES_DB:-skyops}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../../server/db/schema.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-skyops} -d ${POSTGRES_DB:-skyops}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - skyops-net
+
+  skyops-server:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: ghcr.io/skyops/skyops:latest
+    container_name: skyops-control-plane
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DEPLOYMENT_MODE=self-hosted
+      - DATA_TELEMETRY_ENABLED=${DATA_TELEMETRY_ENABLED:-false}
+      - DATABASE_URL=postgres://${POSTGRES_USER:-skyops}:${POSTGRES_PASSWORD:-skyops_secure_password}@postgres:5432/${POSTGRES_DB:-skyops}?sslmode=disable
+      - SKYOPS_DATA_DIR=/app/.data
+      # Secrets are automatically generated (256-bit CSPRNG) & persisted to /app/.data if omitted
+      - JWT_SECRET=${JWT_SECRET:-}
+      - LICENSE_SIGNING_SECRET=${LICENSE_SIGNING_SECRET:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - APP_URL=${APP_URL:-http://localhost:3000}
+    volumes:
+      - skyops_data:/app/.data
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - skyops-net
+
+volumes:
+  postgres_data:
+    driver: local
+  skyops_data:
+    driver: local
+
+networks:
+  skyops-net:
+    driver: bridge

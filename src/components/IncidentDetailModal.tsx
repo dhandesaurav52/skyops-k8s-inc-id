@@ -63,7 +63,7 @@ export const IncidentDetailModal: React.FC<IncidentDetailModalProps> = ({
   const handleAcknowledge = async () => {
     try {
       setStatusUpdating(true);
-      await acknowledgeIncident(incident.id, 'sre@skyops.io');
+      await acknowledgeIncident(incident.id);
       onIncidentUpdated();
     } catch (e) {
       console.error(e);
@@ -75,7 +75,7 @@ export const IncidentDetailModal: React.FC<IncidentDetailModalProps> = ({
   const handleResolve = async () => {
     try {
       setStatusUpdating(true);
-      await resolveIncident(incident.id, 'sre@skyops.io');
+      await resolveIncident(incident.id);
       onIncidentUpdated();
     } catch (e) {
       console.error(e);
@@ -87,7 +87,7 @@ export const IncidentDetailModal: React.FC<IncidentDetailModalProps> = ({
   const handleCloseIncident = async () => {
     try {
       setStatusUpdating(true);
-      await closeIncident(incident.id, 'sre@skyops.io');
+      await closeIncident(incident.id);
       onIncidentUpdated();
       onClose();
     } catch (e) {
