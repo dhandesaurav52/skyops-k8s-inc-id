@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   AlertTriangle,
@@ -13,11 +13,13 @@ import {
   Check,
   ShieldAlert,
   Loader2,
+  Archive,
 } from 'lucide-react';
 import { Incident } from '../types';
 import {
   acknowledgeIncident,
   resolveIncident,
+  closeIncident,
   generateAiDiagnosis,
   convertIncidentToTicket,
 } from '../services/api';
@@ -31,35 +33,67 @@ interface IncidentDetailModalProps {
   incident: Incident | null;
   onClose: () => void;
   onIncidentUpdated: () => void;
+  onOpenTicket?: (ticketId: string) => void;
 }
 
 export const IncidentDetailModal: React.FC<IncidentDetailModalProps> = ({
   incident,
   onClose,
   onIncidentUpdated,
+  onOpenTicket,
 }) => {
   const [loadingAi, setLoadingAi] = useState(false);
   const [aiDiagnosis, setAiDiagnosis] = useState<any>(null);
   const [copiedCmd, setCopiedCmd] = useState(false);
   const [ticketCreated, setTicketCreated] = useState<string | null>(null);
+  const [statusUpdating, setStatusUpdating] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
   if (!incident) return null;
 
   const handleAcknowledge = async () => {
     try {
+      setStatusUpdating(true);
       await acknowledgeIncident(incident.id, 'sre@skyops.io');
       onIncidentUpdated();
     } catch (e) {
       console.error(e);
+    } finally {
+      setStatusUpdating(false);
     }
   };
 
   const handleResolve = async () => {
     try {
+      setStatusUpdating(true);
       await resolveIncident(incident.id, 'sre@skyops.io');
       onIncidentUpdated();
     } catch (e) {
       console.error(e);
+    } finally {
+      setStatusUpdating(false);
+    }
+  };
+
+  const handleCloseIncident = async () => {
+    try {
+      setStatusUpdating(true);
+      await closeIncident(incident.id, 'sre@skyops.io');
+      onIncidentUpdated();
+      onClose();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setStatusUpdating(false);
     }
   };
 
@@ -100,8 +134,18 @@ export const IncidentDetailModal: React.FC<IncidentDetailModalProps> = ({
       : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/40';
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-4xl text-slate-200 shadow-2xl overflow-hidden my-8">
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-4xl text-slate-200 shadow-2xl overflow-hidden my-8"
+      >
         {/* Modal Header */}
         <div className="px-6 py-4 border-b border-slate-800 bg-slate-950 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -119,8 +163,14 @@ export const IncidentDetailModal: React.FC<IncidentDetailModalProps> = ({
             </span>
           </div>
 
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-200 p-1">
+          <button
+            onClick={onClose}
+            className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition-colors flex items-center gap-1 text-xs font-mono border border-transparent hover:border-slate-700"
+            title="Close view (Esc)"
+            aria-label="Close view"
+          >
             <X className="w-5 h-5" />
+            <span className="hidden sm:inline">Esc</span>
           </button>
         </div>
 
@@ -130,14 +180,16 @@ export const IncidentDetailModal: React.FC<IncidentDetailModalProps> = ({
             {incident.status === 'OPEN' && (
               <button
                 onClick={handleAcknowledge}
+                disabled={statusUpdating}
                 className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 font-semibold px-3 py-1.5 rounded transition-colors"
               >
                 Acknowledge Incident
               </button>
             )}
-            {incident.status !== 'RESOLVED' && (
+            {incident.status !== 'RESOLVED' && incident.status !== 'CLOSED' && (
               <button
                 onClick={handleResolve}
+                disabled={statusUpdating}
                 className="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-semibold px-3 py-1.5 rounded transition-colors flex items-center gap-1.5"
               >
                 <CheckCircle2 className="w-3.5 h-3.5" />
@@ -145,18 +197,36 @@ export const IncidentDetailModal: React.FC<IncidentDetailModalProps> = ({
               </button>
             )}
 
+            {incident.status !== 'CLOSED' && (
+              <button
+                onClick={handleCloseIncident}
+                disabled={statusUpdating}
+                className="bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 hover:border-rose-500/50 font-semibold px-3 py-1.5 rounded transition-colors flex items-center gap-1.5"
+                title="Mark incident as CLOSED and dismiss"
+              >
+                <Archive className="w-3.5 h-3.5 text-rose-400" />
+                <span>Close Incident</span>
+              </button>
+            )}
+
             {!ticketCreated ? (
               <button
                 onClick={handleConvertToTicket}
+                disabled={statusUpdating}
                 className="bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 font-semibold px-3 py-1.5 rounded transition-colors flex items-center gap-1.5"
               >
                 <Ticket className="w-3.5 h-3.5" />
-                Convert to Ticket
+                <span>Convert to Ticket</span>
               </button>
             ) : (
-              <span className="bg-indigo-500/20 text-indigo-300 px-3 py-1.5 rounded border border-indigo-500/30 font-mono">
-                Ticket Created: {ticketCreated}
-              </span>
+              <button
+                onClick={() => onOpenTicket && onOpenTicket(ticketCreated)}
+                className="bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 px-3 py-1.5 rounded border border-indigo-500/50 font-mono font-bold flex items-center gap-1.5 transition-colors"
+                title="Open SRE Ticket Document"
+              >
+                <Ticket className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Ticket: {ticketCreated} (Open Document &rarr;)</span>
+              </button>
             )}
           </div>
 
@@ -363,13 +433,32 @@ export const IncidentDetailModal: React.FC<IncidentDetailModalProps> = ({
         </div>
 
         {/* Modal Footer */}
-        <div className="px-6 py-3 bg-slate-950 border-t border-slate-800 flex justify-end">
-          <button
-            onClick={onClose}
-            className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold px-4 py-1.5 rounded text-xs"
-          >
-            Close View
-          </button>
+        <div className="px-6 py-3 bg-slate-950 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs font-mono text-slate-500">
+          <div className="flex items-center gap-2">
+            <span>SkyOps Incident Management &bull; Verified Telemetry</span>
+            <span className="hidden sm:inline text-slate-700">|</span>
+            <span className="text-slate-400">Status: <strong className="text-slate-200">{incident.status}</strong></span>
+          </div>
+          <div className="flex items-center gap-2">
+            {incident.status !== 'CLOSED' && (
+              <button
+                onClick={handleCloseIncident}
+                disabled={statusUpdating}
+                className="bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 hover:border-rose-500/50 font-semibold px-3 py-1.5 rounded transition-colors flex items-center gap-1.5 font-sans"
+                title="Mark incident as CLOSED and dismiss"
+              >
+                <Archive className="w-3.5 h-3.5 text-rose-400" />
+                <span>Mark Closed & Exit</span>
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold px-4 py-1.5 rounded transition-colors flex items-center gap-1.5 border border-slate-700 hover:border-slate-600 font-sans"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>Close View (Esc)</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>

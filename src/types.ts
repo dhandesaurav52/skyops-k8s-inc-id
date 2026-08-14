@@ -64,6 +64,12 @@ export interface CommentItem {
   createdAt: string;
 }
 
+export interface TicketTask {
+  id: string;
+  text: string;
+  completed: boolean;
+}
+
 export interface Ticket {
   id: string;
   incident_id: string;
@@ -78,6 +84,20 @@ export interface Ticket {
   cluster_name: string;
   namespace: string;
   resource: string;
+  category?: string;
+  impact?: string;
+  root_cause?: string;
+  suggested_actions?: string[];
+  suggested_command?: string;
+  suggested_yaml_patch?: string;
+  evidence?: string[];
+  tasks?: TicketTask[];
+  timeline?: TimelineItem[];
+  resolution_notes?: string;
+  resolved_by?: string;
+  resolved_at?: string;
+  due_date?: string;
+  tags?: string[];
   comments: CommentItem[];
   created_at: string;
   updated_at: string;

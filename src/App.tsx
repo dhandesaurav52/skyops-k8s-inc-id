@@ -3,6 +3,7 @@ import { Header } from './components/Header';
 import { Sidebar, NavTab } from './components/Sidebar';
 import { ConnectClusterModal } from './components/ConnectClusterModal';
 import { IncidentDetailModal } from './components/IncidentDetailModal';
+import { TicketDetailModal } from './components/TicketDetailModal';
 
 import { OverviewPage } from './pages/OverviewPage';
 import { ClustersPage } from './pages/ClustersPage';
@@ -35,11 +36,13 @@ import {
   fetchWorkloads,
   fetchDemoModeStatus,
   toggleDemoMode as toggleDemoApi,
+  simulateIncident as simulateIncidentApi,
 } from './services/api';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<NavTab>('overview');
   const [clusters, setClusters] = useState<Cluster[]>([]);
+  const [selectedClusterId, setSelectedClusterId] = useState<string | null>(null);
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
@@ -47,9 +50,11 @@ export default function App() {
   const [nodes, setNodes] = useState<NodeHealth[]>([]);
   const [workloads, setWorkloads] = useState<WorkloadHealth[]>([]);
   const [demoMode, setDemoMode] = useState<boolean>(false);
+  const [apiHealthy, setApiHealthy] = useState<boolean>(true);
 
   const [isConnectModalOpen, setIsConnectModalOpen] = useState<boolean>(false);
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
+  const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   const loadData = useCallback(async () => {
@@ -82,15 +87,28 @@ export default function App() {
       setNodes(nodesData);
       setWorkloads(workloadsData);
       setDemoMode(demoStatus.demoMode);
+      setApiHealthy(true);
+
+      // ONLY update currently open incident or ticket if still open (prevents reopening after close)
+      setSelectedIncident((curr) => {
+        if (!curr) return null;
+        return incidentsData.find((i: Incident) => i.id === curr.id) || curr;
+      });
+
+      setSelectedTicket((curr) => {
+        if (!curr) return null;
+        return ticketsData.find((t: Ticket) => t.id === curr.id) || curr;
+      });
     } catch (err) {
       console.error('Error fetching telemetry data:', err);
+      setApiHealthy(false);
     }
   }, []);
 
   useEffect(() => {
     loadData();
-    // Poll telemetry every 10 seconds for live updates
-    const interval = setInterval(loadData, 10000);
+    // Poll telemetry every 8 seconds for live updates
+    const interval = setInterval(loadData, 8000);
     return () => clearInterval(interval);
   }, [loadData]);
 
@@ -104,33 +122,68 @@ export default function App() {
     }
   };
 
-  const activeIncidentsCount = incidents.filter(
+  const handleSimulateIncident = async () => {
+    try {
+      const newInc = await simulateIncidentApi();
+      await loadData();
+      setSelectedIncident(newInc);
+    } catch (err) {
+      console.error('Failed to inject incident signal', err);
+    }
+  };
+
+  const handleOpenLinkedIncident = (incidentId: string) => {
+    const inc = incidents.find((i) => i.id === incidentId);
+    if (inc) {
+      setSelectedTicket(null);
+      setSelectedIncident(inc);
+    }
+  };
+
+  const handleOpenLinkedTicket = (ticketId: string) => {
+    const tick = tickets.find((t) => t.id === ticketId);
+    if (tick) {
+      setSelectedIncident(null);
+      setSelectedTicket(tick);
+    }
+  };
+
+  // Filter items based on selected cluster
+  const clusterFilteredIncidents = selectedClusterId
+    ? incidents.filter((i) => i.cluster_id === selectedClusterId)
+    : incidents;
+
+  const clusterFilteredTickets = selectedClusterId
+    ? tickets.filter((t) => t.cluster_id === selectedClusterId)
+    : tickets;
+
+  const activeIncidentsCount = clusterFilteredIncidents.filter(
     (i) => i.status !== 'RESOLVED' && i.status !== 'CLOSED'
   ).length;
 
-  const openTicketsCount = tickets.filter(
+  const openTicketsCount = clusterFilteredTickets.filter(
     (t) => t.status !== 'CLOSED' && t.status !== 'RESOLVED'
   ).length;
 
   // Filtered lists if search query is active
   const filteredIncidents = searchQuery
-    ? incidents.filter(
+    ? clusterFilteredIncidents.filter(
         (i) =>
           i.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
           i.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
           i.cluster_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
           i.namespace.toLowerCase().includes(searchQuery.toLowerCase())
       )
-    : incidents;
+    : clusterFilteredIncidents;
 
   const filteredTickets = searchQuery
-    ? tickets.filter(
+    ? clusterFilteredTickets.filter(
         (t) =>
           t.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
           t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
           t.cluster_name.toLowerCase().includes(searchQuery.toLowerCase())
       )
-    : tickets;
+    : clusterFilteredTickets;
 
   const renderTabContent = () => {
     switch (activeTab) {
@@ -140,10 +193,15 @@ export default function App() {
             clusters={clusters}
             incidents={filteredIncidents}
             tickets={filteredTickets}
+            events={events}
+            nodes={nodes}
             onOpenConnectModal={() => setIsConnectModalOpen(true)}
             onSelectIncident={(inc) => setSelectedIncident(inc)}
+            onSelectTicket={(tick) => setSelectedTicket(tick)}
+            onNavigateTab={setActiveTab}
             demoMode={demoMode}
             onToggleDemoMode={handleToggleDemoMode}
+            onSimulateIncident={handleSimulateIncident}
           />
         );
       case 'clusters':
@@ -162,7 +220,13 @@ export default function App() {
           />
         );
       case 'tickets':
-        return <TicketsPage tickets={filteredTickets} onRefresh={loadData} />;
+        return (
+          <TicketsPage
+            tickets={filteredTickets}
+            onRefresh={loadData}
+            onSelectTicket={(ticket) => setSelectedTicket(ticket)}
+          />
+        );
       case 'metrics':
         return <MetricsPage />;
       case 'events':
@@ -186,25 +250,36 @@ export default function App() {
             clusters={clusters}
             incidents={filteredIncidents}
             tickets={filteredTickets}
+            events={events}
+            nodes={nodes}
             onOpenConnectModal={() => setIsConnectModalOpen(true)}
             onSelectIncident={(inc) => setSelectedIncident(inc)}
+            onSelectTicket={(tick) => setSelectedTicket(tick)}
+            onNavigateTab={setActiveTab}
             demoMode={demoMode}
             onToggleDemoMode={handleToggleDemoMode}
+            onSimulateIncident={handleSimulateIncident}
           />
         );
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-emerald-500/30 selection:text-emerald-200">
+    <div className="min-h-screen bg-[#070a0f] text-slate-100 flex flex-col font-sans selection:bg-cyan-500/30 selection:text-cyan-200">
       <Header
         demoMode={demoMode}
         onToggleDemoMode={handleToggleDemoMode}
-        clusterCount={clusters.length}
+        clusters={clusters}
+        selectedClusterId={selectedClusterId}
+        onSelectCluster={setSelectedClusterId}
         activeIncidentsCount={activeIncidentsCount}
         onOpenConnectModal={() => setIsConnectModalOpen(true)}
+        onSimulateIncident={handleSimulateIncident}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
+        onRefresh={loadData}
+        onOpenSettings={() => setActiveTab('settings')}
+        apiHealthy={apiHealthy}
       />
 
       <div className="flex flex-1 overflow-hidden">
@@ -214,9 +289,10 @@ export default function App() {
           activeIncidentsCount={activeIncidentsCount}
           openTicketsCount={openTicketsCount}
           clustersCount={clusters.length}
+          apiHealthy={apiHealthy}
         />
 
-        <main className="flex-1 overflow-y-auto bg-slate-950 min-h-[calc(100vh-57px)]">
+        <main className="flex-1 overflow-y-auto bg-[#070a0f] min-h-[calc(100vh-53px)]">
           {renderTabContent()}
         </main>
       </div>
@@ -233,7 +309,17 @@ export default function App() {
         incident={selectedIncident}
         onClose={() => setSelectedIncident(null)}
         onIncidentUpdated={loadData}
+        onOpenTicket={handleOpenLinkedTicket}
+      />
+
+      {/* SRE Ticket Document Detail Modal */}
+      <TicketDetailModal
+        ticket={selectedTicket}
+        onClose={() => setSelectedTicket(null)}
+        onTicketUpdated={loadData}
+        onSelectIncident={handleOpenLinkedIncident}
       />
     </div>
   );
 }
+

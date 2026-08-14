@@ -56,6 +56,16 @@ export async function resolveIncident(incidentId: string, userEmail: string): Pr
   return res.json();
 }
 
+export async function closeIncident(incidentId: string, userEmail: string): Promise<Incident> {
+  const res = await fetch(`${API_BASE}/incidents/${incidentId}/close`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_email: userEmail }),
+  });
+  if (!res.ok) throw new Error('Failed to close incident');
+  return res.json();
+}
+
 export async function generateAiDiagnosis(incidentId: string) {
   const res = await fetch(`${API_BASE}/incidents/${incidentId}/ai-diagnose`, {
     method: 'POST',
@@ -81,13 +91,53 @@ export async function fetchTickets(): Promise<Ticket[]> {
   return res.json();
 }
 
-export async function updateTicketStatus(ticketId: string, status: string, assignee?: string): Promise<Ticket> {
+export async function fetchTicketById(ticketId: string): Promise<Ticket> {
+  const res = await fetch(`${API_BASE}/tickets/${ticketId}`);
+  if (!res.ok) throw new Error('Failed to fetch ticket');
+  return res.json();
+}
+
+export async function createTicket(ticketData: Partial<Ticket>): Promise<Ticket> {
+  const res = await fetch(`${API_BASE}/tickets`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(ticketData),
+  });
+  if (!res.ok) throw new Error('Failed to create ticket');
+  return res.json();
+}
+
+export async function updateTicket(ticketId: string, updates: Partial<Ticket>): Promise<Ticket> {
   const res = await fetch(`${API_BASE}/tickets/${ticketId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status, assignee }),
+    body: JSON.stringify(updates),
   });
   if (!res.ok) throw new Error('Failed to update ticket');
+  return res.json();
+}
+
+export async function updateTicketStatus(ticketId: string, status: string, assignee?: string): Promise<Ticket> {
+  return updateTicket(ticketId, { status: status as any, assignee });
+}
+
+export async function toggleTicketTask(ticketId: string, taskId: string, completed?: boolean): Promise<Ticket> {
+  const res = await fetch(`${API_BASE}/tickets/${ticketId}/tasks/${taskId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ completed }),
+  });
+  if (!res.ok) throw new Error('Failed to toggle task');
+  return res.json();
+}
+
+export async function addTicketComment(ticketId: string, author: string, message: string): Promise<Ticket> {
+  const res = await fetch(`${API_BASE}/tickets/${ticketId}/comments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ author, message }),
+  });
+  if (!res.ok) throw new Error('Failed to add comment');
   return res.json();
 }
 
@@ -130,3 +180,13 @@ export async function fetchDemoModeStatus(): Promise<{ demoMode: boolean }> {
   if (!res.ok) return { demoMode: false };
   return res.json();
 }
+
+export async function simulateIncident(): Promise<Incident> {
+  const res = await fetch(`${API_BASE}/simulate-incident`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  if (!res.ok) throw new Error('Failed to inject anomaly signal');
+  return res.json();
+}
+

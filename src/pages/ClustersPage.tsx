@@ -38,55 +38,55 @@ export const ClustersPage: React.FC<ClustersPageProps> = ({
   };
 
   return (
-    <div className="p-6 space-y-6 text-slate-200">
-      <div className="flex items-center justify-between">
+    <div className="p-4 md:p-6 space-y-5 text-slate-200 font-sans max-w-[1600px] mx-auto select-none">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#182232] pb-4">
         <div>
-          <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <Server className="w-5 h-5 text-emerald-400" />
-            <span>Kubernetes Clusters</span>
+          <h2 className="text-base font-bold text-white flex items-center gap-2 font-mono">
+            <Server className="w-4 h-4 text-emerald-400" />
+            <span className="tracking-wider uppercase">Kubernetes Clusters</span>
           </h2>
-          <p className="text-xs text-slate-400">
-            Registered Kubernetes clusters sending telemetry outbound to SkyOps.
+          <p className="text-xs text-slate-400 font-mono mt-0.5">
+            Registered Kubernetes clusters sending telemetry outbound to SkyOps SaaS.
           </p>
         </div>
 
         <button
           onClick={onOpenConnectModal}
-          className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold px-4 py-2 rounded-md text-xs flex items-center gap-2"
+          className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-3.5 py-1.5 rounded text-xs flex items-center gap-1.5 shadow-sm font-mono transition-colors"
         >
-          <Plus className="w-4 h-4" />
-          <span>Connect Cluster</span>
+          <Plus className="w-3.5 h-3.5" />
+          <span>Connect Cluster / Install Agent</span>
         </button>
       </div>
 
       {clusters.length === 0 ? (
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-12 text-center space-y-4">
-          <Server className="w-10 h-10 text-slate-600 mx-auto" />
-          <h3 className="text-base font-bold text-white">No Clusters Connected</h3>
+        <div className="bg-[#0c111a] border border-[#182232] rounded-md p-12 text-center space-y-4 font-mono">
+          <Server className="w-8 h-8 text-slate-600 mx-auto" />
+          <h3 className="text-sm font-bold text-white">No Clusters Connected</h3>
           <p className="text-xs text-slate-400 max-w-md mx-auto">
-            Click "Connect Cluster" to generate a single-use token and Helm command for your target cluster.
+            Click "Install Agent" to download the installer script or copy the one-line curl command for your Kubernetes cluster.
           </p>
           <button
             onClick={onOpenConnectModal}
-            className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold px-4 py-2 rounded-md text-xs inline-block"
+            className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-4 py-2 rounded text-xs inline-block shadow-md"
           >
-            Connect Cluster
+            Install SkyOps Agent
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 font-mono">
           {clusters.map((cls) => {
             const isConnected = cls.status === 'CONNECTED';
 
             return (
               <div
                 key={cls.id}
-                className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4 shadow-sm hover:border-slate-700 transition-all"
+                className="bg-[#0c111a] border border-[#182232] rounded-md p-4 space-y-3 shadow-sm hover:border-[#223249] transition-all"
               >
                 <div className="flex items-start justify-between">
                   <div>
-                    <h3 className="font-bold text-white font-mono text-sm">{cls.name}</h3>
-                    <p className="text-[11px] text-slate-400 font-mono">ID: {cls.id}</p>
+                    <h3 className="font-bold text-white text-sm">{cls.name}</h3>
+                    <p className="text-[11px] text-slate-400">ID: {cls.id}</p>
                   </div>
 
                   <span
@@ -100,7 +100,7 @@ export const ClustersPage: React.FC<ClustersPageProps> = ({
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 bg-slate-950 p-3 rounded-md border border-slate-800 text-xs font-mono">
+                <div className="grid grid-cols-2 gap-2 bg-[#090d14] p-3 rounded-md border border-[#182232] text-xs font-mono">
                   <div>
                     <span className="text-slate-500 block text-[10px]">Nodes / Pods</span>
                     <span className="text-slate-200 font-bold">
@@ -121,7 +121,7 @@ export const ClustersPage: React.FC<ClustersPageProps> = ({
                   </div>
                 </div>
 
-                <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-xs">
+                <div className="pt-2 border-t border-[#182232] flex items-center justify-between text-xs">
                   <div className="text-[10px] text-slate-500 font-mono">
                     Heartbeat: {new Date(cls.last_heartbeat).toLocaleTimeString()}
                   </div>
@@ -129,14 +129,14 @@ export const ClustersPage: React.FC<ClustersPageProps> = ({
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => handleRotateToken(cls.id, cls.name)}
-                      className="p-1.5 text-slate-400 hover:text-amber-400 rounded hover:bg-slate-800"
+                      className="p-1.5 text-slate-400 hover:text-amber-400 rounded hover:bg-[#151e2b] transition-colors"
                       title="Rotate Cluster Token"
                     >
                       <Key className="w-3.5 h-3.5" />
                     </button>
                     <button
                       onClick={() => handleDelete(cls.id, cls.name)}
-                      className="p-1.5 text-slate-400 hover:text-rose-400 rounded hover:bg-slate-800"
+                      className="p-1.5 text-slate-400 hover:text-rose-400 rounded hover:bg-[#151e2b] transition-colors"
                       title="Delete Cluster"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -151,3 +151,4 @@ export const ClustersPage: React.FC<ClustersPageProps> = ({
     </div>
   );
 };
+
