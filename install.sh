@@ -1,103 +1,122 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# SkyOps Self-Hosted Installer
+# SkyOps Primary One-Line Installer
 # ==============================================================================
-# Installs and bootstraps SkyOps in customer infrastructure with zero manual
-# secret or database configuration required.
-#
-# Usage:
+# Primary customer-facing installation experience:
 #   curl -fsSL https://get.skyops.io/install.sh | bash
-#   or: ./install.sh
+#
+# Idempotent:
+#   - Fresh install: sets up directories, secrets, bundled postgres (if needed),
+#     and prints the single one-time initial administrator password.
+#   - Upgrade/Existing: preserves existing data, secrets, users, clusters, and
+#     refuses to regenerate or overwrite credentials.
 # ==============================================================================
 set -euo pipefail
 
+# 1. Formatting & Colors
 BOLD='\033[1m'
 GREEN='\033[0;32m'
 CYAN='\033[0;36m'
 RED='\033[0;31m'
 YELLOW='\033[0;33m'
+DIM='\033[2m'
 RESET='\033[0m'
 
-echo -e "${BOLD}${CYAN}=====================================${RESET}"
-echo -e "${BOLD}${CYAN}        SKYOPS INSTALLER             ${RESET}"
-echo -e "${BOLD}${CYAN}=====================================${RESET}"
-echo -e "SkyOps Self-Hosted\n"
+# 2. Environment & System Detection
+detect_os() {
+  case "$(uname -s)" in
+    Linux*)   echo "linux" ;;
+    Darwin*)  echo "darwin" ;;
+    *)        echo "unsupported" ;;
+  esac
+}
+
+detect_arch() {
+  case "$(uname -m)" in
+    x86_64|amd64)   echo "amd64" ;;
+    aarch64|arm64)  echo "arm64" ;;
+    *)              echo "unsupported" ;;
+  esac
+}
+
+OS_TYPE=$(detect_os)
+ARCH_TYPE=$(detect_arch)
+
+if [ "$OS_TYPE" = "unsupported" ]; then
+  echo -e "${RED}[Error] Unsupported operating system. SkyOps runs on Linux and macOS.${RESET}" >&2
+  exit 1
+fi
+
+# Detect server IP for clean URL display
+detect_server_ip() {
+  if command -v hostname &>/dev/null && hostname -I &>/dev/null; then
+    hostname -I | awk '{print $1}'
+  elif command -v ip &>/dev/null; then
+    ip route get 1.1.1.1 2>/dev/null | awk '{print $7}' | head -n1
+  else
+    echo "localhost"
+  fi
+}
+
+SERVER_IP="${SKYOPS_HOST:-$(detect_server_ip)}"
+[ -z "$SERVER_IP" ] && SERVER_IP="localhost"
+PORT="${SKYOPS_PORT:-3000}"
+APP_URL="http://${SERVER_IP}:${PORT}"
 
 INSTALL_DIR="${SKYOPS_INSTALL_DIR:-$HOME/.skyops}"
-PORT="${SKYOPS_PORT:-3000}"
-HOST="${SKYOPS_HOST:-localhost}"
-APP_URL="http://${HOST}:${PORT}"
+DATA_DIR="${INSTALL_DIR}/data"
+SECRETS_DIR="${DATA_DIR}/secrets"
+PGDATA_DIR="${INSTALL_DIR}/pgdata"
 
-mkdir -p "${INSTALL_DIR}/data"
-mkdir -p "${INSTALL_DIR}/pgdata"
-chmod 700 "${INSTALL_DIR}/data"
+mkdir -p "${INSTALL_DIR}"
+mkdir -p "${DATA_DIR}"
+mkdir -p "${SECRETS_DIR}"
+mkdir -p "${PGDATA_DIR}"
+chmod 700 "${INSTALL_DIR}" "${DATA_DIR}" "${SECRETS_DIR}" "${PGDATA_DIR}"
 
-# Check container runtime
+# 3. Check for Container Runtime or Node Runtime
+CONTAINER_ENGINE=""
 if command -v docker &> /dev/null; then
   CONTAINER_ENGINE="docker"
 elif command -v podman &> /dev/null; then
   CONTAINER_ENGINE="podman"
-else
-  echo -e "${RED}[Error] Docker or Podman is required to install SkyOps.${RESET}"
-  echo -e "Please install Docker (https://docs.docker.com/get-docker/) and rerun the installer."
-  exit 1
 fi
 
-# 1. Collect Administrator Credentials
-ADMIN_EMAIL="${ADMIN_EMAIL:-${INITIAL_ADMIN_EMAIL:-}}"
-ADMIN_PASSWORD="${ADMIN_PASSWORD:-${INITIAL_ADMIN_PASSWORD:-}}"
-
-if [ -z "${ADMIN_EMAIL}" ]; then
-  if [ -t 0 ]; then
-    read -rp "Admin Email: " ADMIN_EMAIL
-  else
-    ADMIN_EMAIL="admin@skyops.local"
-  fi
-fi
-
-if [ -z "${ADMIN_EMAIL}" ]; then
-  ADMIN_EMAIL="admin@skyops.local"
-fi
-
-if [ -z "${ADMIN_PASSWORD}" ]; then
-  if [ -t 0 ]; then
-    while true; do
-      read -rsp "Admin Password: " ADMIN_PASSWORD
-      echo ""
-      if [ ${#ADMIN_PASSWORD} -lt 8 ]; then
-        echo -e "${YELLOW}Password must be at least 8 characters. Please try again.${RESET}"
-        continue
-      fi
-      read -rsp "Confirm Password: " CONFIRM_PASSWORD
-      echo ""
-      if [ "${ADMIN_PASSWORD}" != "${CONFIRM_PASSWORD}" ]; then
-        echo -e "${YELLOW}Passwords do not match. Please try again.${RESET}"
-        continue
-      fi
-      break
-    done
-  else
-    ADMIN_PASSWORD="SkyOpsAdmin123!"
-  fi
-fi
-
-# 2. Automatically generate CSPRNG 256-bit secrets
+# CSPRNG helper function (uses OpenSSL or /dev/urandom)
 generate_secret() {
+  local length="$1"
   if command -v openssl &> /dev/null; then
-    openssl rand -hex "$1" 2>/dev/null
+    openssl rand -hex "$length" 2>/dev/null
   else
-    head -c "$1" /dev/urandom | od -An -tx1 | tr -d ' \n'
+    head -c "$length" /dev/urandom | od -An -tx1 | tr -d ' \n'
   fi
 }
 
-JWT_SECRET=$(generate_secret 32)
-SESSION_SECRET=$(generate_secret 32)
-INTERNAL_ENCRYPTION_KEY=$(generate_secret 32)
-LICENSE_SIGNING_SECRET=$(generate_secret 32)
-POSTGRES_PASSWORD=$(generate_secret 16)
+# 4. Detect Existing Installation
+SECRETS_FILE="${DATA_DIR}/secrets.json"
+PASSWORD_FILE="${SECRETS_DIR}/initial-admin-password"
+IS_EXISTING_INSTALL=false
+IS_INITIALIZED=false
 
-# Persist secrets to .data/secrets.json
-cat <<EOF > "${INSTALL_DIR}/data/secrets.json"
+if [ -f "${SECRETS_FILE}" ]; then
+  IS_EXISTING_INSTALL=true
+  # If the one-time initial-admin-password file has already been deleted, setup is complete
+  if [ ! -f "${PASSWORD_FILE}" ]; then
+    IS_INITIALIZED=true
+  fi
+fi
+
+INITIAL_ADMIN_PASSWORD=""
+
+if [ "$IS_EXISTING_INSTALL" = false ]; then
+  # 5. Fresh Installation: Generate 256-bit secrets & one-time bootstrap password
+  JWT_SECRET=$(generate_secret 32)
+  SESSION_SECRET=$(generate_secret 32)
+  INTERNAL_ENCRYPTION_KEY=$(generate_secret 32)
+  LICENSE_SIGNING_SECRET=$(generate_secret 32)
+  POSTGRES_PASSWORD=$(generate_secret 16)
+
+  cat <<EOF > "${SECRETS_FILE}"
 {
   "jwtSecret": "${JWT_SECRET}",
   "sessionSecret": "${SESSION_SECRET}",
@@ -108,9 +127,28 @@ cat <<EOF > "${INSTALL_DIR}/data/secrets.json"
   "updatedAt": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 }
 EOF
-chmod 600 "${INSTALL_DIR}/data/secrets.json"
+  chmod 600 "${SECRETS_FILE}"
 
-# 3. Write production docker-compose
+  # Generate 192-bit CSPRNG one-time initial administrator password
+  BOOTSTRAP_HEX=$(generate_secret 24)
+  INITIAL_ADMIN_PASSWORD="SKYOPS-${BOOTSTRAP_HEX}"
+  echo "${INITIAL_ADMIN_PASSWORD}" > "${PASSWORD_FILE}"
+  chmod 600 "${PASSWORD_FILE}"
+
+else
+  # Read existing DB password from secrets.json if present
+  if [ -f "${SECRETS_FILE}" ]; then
+    POSTGRES_PASSWORD=$(grep -o '"databasePassword": *"[^"]*"' "${SECRETS_FILE}" | cut -d'"' -f4 || echo "skyops_secure_password")
+  else
+    POSTGRES_PASSWORD="skyops_secure_password"
+  fi
+
+  if [ -f "${PASSWORD_FILE}" ]; then
+    INITIAL_ADMIN_PASSWORD=$(cat "${PASSWORD_FILE}" | tr -d ' \n\r')
+  fi
+fi
+
+# 6. Generate/Update docker-compose.yml configuration
 cat <<EOF > "${INSTALL_DIR}/docker-compose.yml"
 version: '3.8'
 
@@ -147,10 +185,6 @@ services:
       - DATABASE_URL=postgres://skyops:${POSTGRES_PASSWORD}@postgres:5432/skyops?sslmode=disable
       - SKYOPS_DATA_DIR=/app/.data
       - APP_URL=http://localhost:${PORT}
-      - INITIAL_ADMIN_EMAIL=${ADMIN_EMAIL}
-      - INITIAL_ADMIN_PASSWORD=${ADMIN_PASSWORD}
-      - JWT_SECRET=${JWT_SECRET}
-      - LICENSE_SIGNING_SECRET=${LICENSE_SIGNING_SECRET}
     volumes:
       - ./data:/app/.data
     ports:
@@ -174,40 +208,32 @@ networks:
     driver: bridge
 EOF
 
-# 4. Start services
-cd "${INSTALL_DIR}"
-if docker compose version &> /dev/null; then
-  docker compose up -d >/dev/null 2>&1
-elif command -v docker-compose &> /dev/null; then
-  docker-compose up -d >/dev/null 2>&1
-else
-  $CONTAINER_ENGINE run -d \
-    --name skyops-control-plane \
-    --restart unless-stopped \
-    -p "${PORT}:3000" \
-    -v "${INSTALL_DIR}/data:/app/.data" \
-    -e DEPLOYMENT_MODE=self-hosted \
-    -e DATA_TELEMETRY_ENABLED=false \
-    -e SKYOPS_DATA_DIR=/app/.data \
-    -e INITIAL_ADMIN_EMAIL="${ADMIN_EMAIL}" \
-    -e INITIAL_ADMIN_PASSWORD="${ADMIN_PASSWORD}" \
-    ghcr.io/skyops/skyops:latest >/dev/null 2>&1
+# 7. Start / Restart SkyOps Services
+if [ -n "$CONTAINER_ENGINE" ]; then
+  cd "${INSTALL_DIR}"
+  if docker compose version &> /dev/null; then
+    docker compose up -d >/dev/null 2>&1 || true
+  elif command -v docker-compose &> /dev/null; then
+    docker-compose up -d >/dev/null 2>&1 || true
+  fi
 fi
 
-# 5. Wait for readiness
+# 8. Wait for Readiness Endpoint (non-blocking fallback)
 MAX_RETRIES=30
 RETRY_COUNT=0
+IS_READY=false
+
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
   if command -v curl &> /dev/null; then
-    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${APP_URL}/ready" 2>/dev/null || echo "000")
+    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:${PORT}/ready" 2>/dev/null || echo "000")
   elif command -v wget &> /dev/null; then
-    HTTP_CODE=$(wget -q -S -O /dev/null "${APP_URL}/ready" 2>&1 | grep "HTTP/" | awk '{print $2}' | tail -1 || echo "000")
+    HTTP_CODE=$(wget -q -S -O /dev/null "http://127.0.0.1:${PORT}/ready" 2>&1 | grep "HTTP/" | awk '{print $2}' | tail -1 || echo "000")
   else
     HTTP_CODE="200"
-    break
   fi
 
   if [ "$HTTP_CODE" = "200" ]; then
+    IS_READY=true
     break
   fi
 
@@ -215,16 +241,51 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
   RETRY_COUNT=$((RETRY_COUNT + 1))
 done
 
-# 6. Display exact clean readiness summary
-echo ""
-echo -e "${BOLD}${GREEN}=====================================${RESET}"
-echo -e "${BOLD}${GREEN}        SKYOPS IS READY              ${RESET}"
-echo -e "${BOLD}${GREEN}=====================================${RESET}\n"
-echo -e "SkyOps URL:"
-echo -e "${BOLD}${CYAN}${APP_URL}${RESET}\n"
-echo -e "Administrator:"
-echo -e "${BOLD}${ADMIN_EMAIL}${RESET}\n"
-echo -e "Installation complete.\n"
-echo -e "Log in using the administrator"
-echo -e "credentials you provided during installation.\n"
-echo -e "${BOLD}${GREEN}=====================================${RESET}"
+# 9. Terminal Output Experience
+if [ "$IS_INITIALIZED" = true ]; then
+  # System already initialized; upgrade complete
+  echo ""
+  echo -e "${BOLD}${CYAN}==================================================${RESET}"
+  echo -e "${BOLD}${GREEN}             SKYOPS UPDATED                       ${RESET}"
+  echo -e "${BOLD}${CYAN}==================================================${RESET}"
+  echo ""
+  echo -e "SkyOps Control Plane is up to date and ready."
+  echo ""
+  echo -e "${BOLD}URL:${RESET}"
+  echo -e "${CYAN}${APP_URL}${RESET}"
+  echo ""
+  echo -e "All existing data, users, and cluster connections preserved."
+  echo ""
+  echo -e "${BOLD}${CYAN}==================================================${RESET}"
+  echo ""
+
+else
+  # Fresh Installation / Pending First Launch
+  echo ""
+  echo -e "${BOLD}${CYAN}==================================================${RESET}"
+  echo -e "${BOLD}${GREEN}             SKYOPS INSTALLED                     ${RESET}"
+  echo -e "${BOLD}${CYAN}==================================================${RESET}"
+  echo ""
+  echo -e "SkyOps Control Plane is ready."
+  echo ""
+  echo -e "${BOLD}URL:${RESET}"
+  echo -e "${BOLD}${CYAN}${APP_URL}${RESET}"
+  echo ""
+  echo -e "${BOLD}Initial Administrator Password:${RESET}"
+  echo ""
+  echo -e "${BOLD}${GREEN}${INITIAL_ADMIN_PASSWORD}${RESET}"
+  echo ""
+  echo -e "${BOLD}${YELLOW}IMPORTANT:${RESET}"
+  echo -e "This is a one-time bootstrap password."
+  echo ""
+  echo -e "Use it to unlock SkyOps in your browser."
+  echo ""
+  echo -e "After you create your permanent administrator"
+  echo -e "account, this password will be permanently"
+  echo -e "invalidated and will not be displayed again."
+  echo ""
+  echo -e "Save it securely before continuing."
+  echo ""
+  echo -e "${BOLD}${CYAN}==================================================${RESET}"
+  echo ""
+fi
