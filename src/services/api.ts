@@ -23,6 +23,53 @@ export async function fetchSetupStatus(): Promise<SetupStatus> {
   return res.json();
 }
 
+export async function verifyBootstrapPassword(password: string): Promise<{ success: boolean; bootstrapToken: string }> {
+  const res = await fetch(`${API_BASE}/setup/verify-bootstrap-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || err.error || 'Invalid initial administrator password.');
+  }
+
+  return res.json();
+}
+
+export async function createPermanentAdmin(payload: {
+  bootstrapToken: string;
+  name: string;
+  email: string;
+  password: string;
+  confirmPassword?: string;
+  organizationName?: string;
+}): Promise<{
+  token: string;
+  user: User;
+  organization: Organization;
+  license: License;
+  message: string;
+}> {
+  const res = await fetch(`${API_BASE}/setup/create-admin`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || err.error || 'Failed to create administrator account.');
+  }
+
+  const data = await res.json();
+  if (data.token) {
+    setAuthToken(data.token);
+  }
+  return data;
+}
+
 export async function initializeSetup(payload: SetupInitPayload): Promise<{
   token: string;
   user: User;

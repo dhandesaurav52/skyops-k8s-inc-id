@@ -7,6 +7,14 @@ export async function testSecretGenerationAndPersistence() {
   
   const testDataDir = path.join(process.cwd(), '.data-test-' + Date.now());
   
+  // Backup environment variables
+  const prevJwt = process.env.JWT_SECRET;
+  const prevLic = process.env.LICENSE_SIGNING_SECRET;
+  const prevSess = process.env.SESSION_SECRET;
+  delete process.env.JWT_SECRET;
+  delete process.env.LICENSE_SIGNING_SECRET;
+  delete process.env.SESSION_SECRET;
+
   try {
     // Test 1: Automatic secret generation when no env vars or persisted secrets exist
     const sm1 = new SecretManager(testDataDir);
@@ -64,13 +72,17 @@ export async function testSecretGenerationAndPersistence() {
     if (!status.jwtSecretConfigured || !status.licenseSecretConfigured || !status.isSecretsFilePersisted) {
       throw new Error('Secret status reporting is incorrect.');
     }
-    // Verify that status does not contain raw string values of secrets
     if ('jwtSecret' in status || 'licenseSigningSecret' in status) {
       throw new Error('SecretStatus interface leaks raw secrets!');
     }
     console.log('  ✓ [Test 2 & 9] Safe status exposure without secret leakage verified.');
 
   } finally {
+    // Restore environment
+    if (prevJwt !== undefined) process.env.JWT_SECRET = prevJwt;
+    if (prevLic !== undefined) process.env.LICENSE_SIGNING_SECRET = prevLic;
+    if (prevSess !== undefined) process.env.SESSION_SECRET = prevSess;
+
     // Cleanup test directory
     try {
       if (fs.existsSync(testDataDir)) {

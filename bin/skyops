@@ -1,0 +1,111 @@
+#!/usr/bin/env node
+import fs from 'fs';
+import path from 'path';
+import dotenv from 'dotenv';
+import { getRepository } from '../server/db/index.js';
+import { bootstrapManager } from '../server/auth/bootstrap.js';
+
+dotenv.config();
+
+const BOLD = '\x1b[1m';
+const GREEN = '\x1b[32m';
+const CYAN = '\x1b[36m';
+const RED = '\x1b[31m';
+const YELLOW = '\x1b[33m';
+const RESET = '\x1b[0m';
+
+async function main() {
+  const args = process.argv.slice(2);
+  const command = args[0] || 'help';
+  const subCommand = args[1];
+
+  const repo = await getRepository();
+
+  if (
+    command === 'initial-password' ||
+    (command === 'admin' && subCommand === 'initial-password')
+  ) {
+    try {
+      const password = await bootstrapManager.getPasswordForCLI(repo);
+      console.log(`
+${BOLD}${CYAN}SKYOPS INITIAL ADMIN PASSWORD:${RESET}
+
+${BOLD}${GREEN}${password}${RESET}
+
+${YELLOW}IMPORTANT:${RESET}
+This credential is valid only until initial administrator
+setup is completed in the web console.
+
+After initialization this command will refuse to display
+the password.
+`);
+      process.exit(0);
+    } catch (err) {
+      console.error(`\n${RED}[SkyOps Error] ${err.message}${RESET}\n`);
+      process.exit(1);
+    }
+  }
+
+  if (
+    command === 'reset-initial-password' ||
+    (command === 'admin' && subCommand === 'reset-initial-password')
+  ) {
+    try {
+      const newPassword = await bootstrapManager.regeneratePasswordForCLI(repo);
+      console.log(`
+${BOLD}${GREEN}[SkyOps] Initial administrator password has been reset.${RESET}
+
+${BOLD}${CYAN}New Password:${RESET} ${BOLD}${newPassword}${RESET}
+
+Retrieve and verify this credential at http://localhost:3000 to complete initial setup.
+`);
+      process.exit(0);
+    } catch (err) {
+      console.error(`\n${RED}[SkyOps Error] ${err.message}${RESET}\n`);
+      process.exit(1);
+    }
+  }
+
+  if (command === 'status') {
+    try {
+      const status = await bootstrapManager.getStatus(repo);
+      const dbHealth = await repo.healthCheck();
+      console.log(`
+${BOLD}${CYAN}=====================================${RESET}
+${BOLD}${CYAN}        SKYOPS CONTROL PLANE         ${RESET}
+${BOLD}${CYAN}=====================================${RESET}
+Status:         ${status.isInitialized ? `${GREEN}INITIALIZED (Online)${RESET}` : `${YELLOW}UNINITIALIZED (Setup Required)${RESET}`}
+State:          ${status.lifecycleState}
+Database:       ${dbHealth.type} (${dbHealth.healthy ? 'HEALTHY' : 'DEGRADED'})
+Password File:  ${status.passwordFilePath}
+${BOLD}${CYAN}=====================================${RESET}
+`);
+      process.exit(0);
+    } catch (err) {
+      console.error(`[SkyOps Error] ${err.message}`);
+      process.exit(1);
+    }
+  }
+
+  // Help / default usage
+  console.log(`
+${BOLD}${CYAN}SkyOps Control Plane CLI${RESET}
+
+Usage:
+  skyops admin initial-password        Retrieve one-time bootstrap password
+  skyops admin reset-initial-password  Regenerate bootstrap password (pre-setup only)
+  skyops status                        Display control plane initialization status
+  skyops help                          Show this help message
+
+Docker Compose:
+  docker compose exec skyops skyops admin initial-password
+
+Kubernetes:
+  kubectl exec -n skyops-system deployment/skyops -- skyops admin initial-password
+`);
+}
+
+main().catch((err) => {
+  console.error('[SkyOps CLI Fatal]', err);
+  process.exit(1);
+});

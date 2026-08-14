@@ -10,8 +10,8 @@ interface LoginModalProps {
 }
 
 export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLoginSuccess }) => {
-  const [email, setEmail] = useState('admin@skyops.io');
-  const [password, setPassword] = useState('SkyOpsAdmin123!');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,11 +33,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLogin
     }
   };
 
-  const handleQuickFill = (roleEmail: string, rolePass: string) => {
-    setEmail(roleEmail);
-    setPassword(rolePass);
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
       <div className="bg-[#0b1019] border border-[#1e2a3d] rounded-xl max-w-md w-full p-6 shadow-2xl space-y-5 text-slate-100 font-sans">
@@ -48,7 +43,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLogin
             </div>
             <div>
               <h2 className="text-base font-bold text-slate-100 tracking-wide">SkyOps Authentication</h2>
-              <p className="text-xs text-slate-400 font-mono">Self-Hosted & Cloud RBAC Access</p>
+              <p className="text-xs text-slate-400 font-mono">Self-Hosted RBAC Access</p>
             </div>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-200 p-1 rounded hover:bg-[#162234]">
@@ -73,7 +68,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLogin
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@skyops.io"
+                placeholder="e.g. admin@company.internal"
                 className="w-full bg-[#080d15] border border-[#202e42] focus:border-cyan-500 rounded-lg pl-9 pr-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none font-mono"
               />
             </div>
@@ -102,34 +97,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLogin
             {isLoading ? 'AUTHENTICATING...' : 'LOG IN TO SKYOPS'}
           </button>
         </form>
-
-        {/* Quick Demo Accounts Helper */}
-        <div className="bg-[#080d15] border border-[#1a2638] rounded-lg p-3 space-y-2">
-          <span className="text-[11px] font-mono text-slate-400 block font-semibold">PRE-CONFIGURED RBAC ACCOUNTS:</span>
-          <div className="grid grid-cols-3 gap-1.5 text-[11px] font-mono">
-            <button
-              type="button"
-              onClick={() => handleQuickFill('admin@skyops.io', 'SkyOpsAdmin123!')}
-              className="py-1 px-2 rounded bg-[#101a28] hover:bg-[#18263a] border border-[#1e2f47] text-cyan-300 text-center truncate"
-            >
-              ADMIN
-            </button>
-            <button
-              type="button"
-              onClick={() => handleQuickFill('sre@skyops.io', 'SkyOpsSre123!')}
-              className="py-1 px-2 rounded bg-[#101a28] hover:bg-[#18263a] border border-[#1e2f47] text-indigo-300 text-center truncate"
-            >
-              STAFF SRE
-            </button>
-            <button
-              type="button"
-              onClick={() => handleQuickFill('dev@skyops.io', 'SkyOpsDev123!')}
-              className="py-1 px-2 rounded bg-[#101a28] hover:bg-[#18263a] border border-[#1e2f47] text-emerald-300 text-center truncate"
-            >
-              DEVELOPER
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   );

@@ -65,6 +65,48 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
 
   return (
     <div className="p-4 md:p-6 space-y-5 text-slate-200 font-sans max-w-[1600px] mx-auto select-none">
+      {/* Zero Clusters Onboarding Hero */}
+      {clusters.length === 0 && (
+        <div className="bg-[#0c1320] border border-[#1a2b42] rounded-xl p-6 shadow-xl space-y-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span className="text-xs font-mono font-bold text-emerald-400 uppercase tracking-wider">
+                  CONTROL PLANE READY &bull; 0 CLUSTERS CONNECTED
+                </span>
+              </div>
+              <h2 className="text-lg font-bold text-white tracking-wide">
+                Connect Your Kubernetes Cluster
+              </h2>
+              <p className="text-xs text-slate-400 max-w-2xl">
+                SkyOps Control Plane is fully initialized and operational. Install the lightweight SkyOps Agent in your Kubernetes cluster to begin streaming real-time pod health, event anomaly detection, and automated root cause analysis.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 shrink-0">
+              <button
+                onClick={onOpenConnectModal}
+                className="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold px-4 py-2.5 rounded-lg text-xs font-mono tracking-wider flex items-center gap-2 transition-colors shadow-lg shadow-cyan-950/40"
+              >
+                <Plus className="w-4 h-4 text-slate-950" />
+                <span>CONNECT KUBERNETES CLUSTER</span>
+              </button>
+
+              {!demoMode && (
+                <button
+                  onClick={onToggleDemoMode}
+                  className="bg-[#121b2b] hover:bg-[#1a273d] text-slate-300 hover:text-white border border-[#22354f] font-semibold px-4 py-2.5 rounded-lg text-xs font-mono flex items-center gap-2 transition-colors"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Load Demo Fleet (Optional)</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 4 Metric KPI Cards Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
         {/* 1. CLUSTERS SCOPE */}

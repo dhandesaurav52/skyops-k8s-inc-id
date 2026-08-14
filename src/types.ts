@@ -105,6 +105,14 @@ export interface SystemInfo {
 export interface SetupStatus {
   isInitialized: boolean;
   setupRequired: boolean;
+  lifecycleState?: string;
+  passwordFilePath?: string;
+  instructions?: {
+    cliCommand: string;
+    dockerCommand: string;
+    k8sCommand: string;
+    catCommand: string;
+  };
   deploymentMode: 'self-hosted' | 'cloud';
   telemetryEnabled: boolean;
   database: {
@@ -118,6 +126,28 @@ export interface SetupStatus {
   };
   version: string;
   serverTime: string;
+}
+
+export interface BootstrapStatus {
+  isInitialized: boolean;
+  setupRequired: boolean;
+  lifecycleState: string;
+  passwordFilePath: string;
+  instructions?: {
+    cliCommand: string;
+    dockerCommand: string;
+    k8sCommand: string;
+    catCommand: string;
+  };
+}
+
+export interface CreateAdminPayload {
+  bootstrapToken: string;
+  name: string;
+  email: string;
+  password: string;
+  confirmPassword?: string;
+  organizationName?: string;
 }
 
 export interface SetupInitPayload {

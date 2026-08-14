@@ -40,7 +40,7 @@ services:
       - DATA_TELEMETRY_ENABLED=${DATA_TELEMETRY_ENABLED:-false}
       - DATABASE_URL=postgres://${POSTGRES_USER:-skyops}:${POSTGRES_PASSWORD:-skyops_secure_password}@postgres:5432/${POSTGRES_DB:-skyops}?sslmode=disable
       - SKYOPS_DATA_DIR=/app/.data
-      # Secrets are automatically generated (256-bit CSPRNG) & persisted to /app/.data if omitted
+      # Secrets & one-time bootstrap password are automatically generated (CSPRNG) & persisted to /app/.data
       - JWT_SECRET=${JWT_SECRET:-}
       - LICENSE_SIGNING_SECRET=${LICENSE_SIGNING_SECRET:-}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}

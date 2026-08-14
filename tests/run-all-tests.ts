@@ -1,4 +1,5 @@
 import { testSecretGenerationAndPersistence } from './unit/secrets.test';
+import { testBootstrapAuthenticationFlow } from './unit/bootstrap.test';
 import { testPasswordHashing } from './unit/password.test';
 import { testLicensingEngine } from './unit/licensing.test';
 import { testPrivacyAndCloudModes } from './unit/privacy.test';
@@ -17,27 +18,30 @@ async function runAllTests() {
     // 1. Secrets Generation, Persistence & Non-leakage
     await testSecretGenerationAndPersistence();
 
-    // 2. Password Hashing & Bcrypt Validation
+    // 2. Initial Bootstrap Authentication & Credential Lifecycle
+    await testBootstrapAuthenticationFlow();
+
+    // 3. Password Hashing & Bcrypt Validation
     await testPasswordHashing();
 
-    // 3. Licensing Engine & Offline HMAC
+    // 4. Licensing Engine & Offline HMAC
     await testLicensingEngine();
 
-    // 4. Privacy & Cloud Compatibility
+    // 5. Privacy & Cloud Compatibility
     await testPrivacyAndCloudModes();
 
-    // 5. First-Run Setup & Lock Protection
+    // 6. First-Run Setup & Lock Protection
     await testFirstRunSetupAndLocking();
 
-    // 6. Health & Readiness Probes
+    // 7. Health & Readiness Probes
     await testHealthAndReadiness();
 
-    // 7. Deployment, Docker Compose & Helm Configurations
+    // 8. Deployment, Docker Compose & Helm Configurations
     await testDeploymentConfigurations();
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(2);
     console.log('\n====================================================');
-    console.log(` ✅ ALL 16 TEST CATEGORIES PASSED SUCCESSFULLY (${duration}s)`);
+    console.log(` ✅ ALL 17 TEST CATEGORIES PASSED SUCCESSFULLY (${duration}s)`);
     console.log('====================================================\n');
   } catch (err: any) {
     console.error('\n❌ TEST SUITE FAILED:', err.message);

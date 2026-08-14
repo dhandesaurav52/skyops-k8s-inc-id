@@ -5,7 +5,8 @@ import { ConnectClusterModal } from './components/ConnectClusterModal';
 import { IncidentDetailModal } from './components/IncidentDetailModal';
 import { TicketDetailModal } from './components/TicketDetailModal';
 import { LoginModal } from './components/LoginModal';
-import { SetupWizard } from './components/SetupWizard';
+import { LoginPage } from './pages/LoginPage';
+import { BootstrapPage } from './pages/BootstrapPage';
 
 import { OverviewPage } from './pages/OverviewPage';
 import { ClustersPage } from './pages/ClustersPage';
@@ -44,7 +45,6 @@ import {
   simulateIncident as simulateIncidentApi,
   getCurrentUser,
   logout as logoutApi,
-  login as loginApi,
   getAuthToken,
 } from './services/api';
 
@@ -60,10 +60,11 @@ export default function App() {
   const [workloads, setWorkloads] = useState<WorkloadHealth[]>([]);
   const [demoMode, setDemoMode] = useState<boolean>(false);
   const [apiHealthy, setApiHealthy] = useState<boolean>(true);
+  const [isAuthChecking, setIsAuthChecking] = useState<boolean>(true);
 
-  // Setup Wizard State
+  // Setup / Bootstrap State
   const [setupStatus, setSetupStatus] = useState<SetupStatus | null>(null);
-  const [isSetupRequired, setIsSetupRequired] = useState<boolean>(false);
+  const [needsBootstrap, setNeedsBootstrap] = useState<boolean>(false);
 
   // Authentication State
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -74,32 +75,38 @@ export default function App() {
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  // Initial Auth Check & Auto-login
+  // Initial Auth & Setup Check
   const checkAuth = useCallback(async () => {
     try {
-      // Check setup status first
-      const setup = await fetchSetupStatus().catch(() => null);
-      setSetupStatus(setup);
+      // 1. Check system bootstrap status
+      const status = await fetchSetupStatus().catch(() => null);
+      setSetupStatus(status);
 
-      if (setup && setup.setupRequired) {
-        setIsSetupRequired(true);
+      if (status && !status.isInitialized) {
+        setNeedsBootstrap(true);
+        setCurrentUser(null);
+        setIsAuthChecking(false);
         return;
       }
 
-      setIsSetupRequired(false);
+      setNeedsBootstrap(false);
 
+      // 2. Verify active JWT session token
       if (getAuthToken()) {
         const profile = await getCurrentUser();
-        setCurrentUser(profile.user);
-        return;
+        if (profile && profile.user) {
+          setCurrentUser(profile.user);
+        } else {
+          setCurrentUser(null);
+        }
+      } else {
+        setCurrentUser(null);
       }
-
-      // If no token in local storage, login with default admin credentials for seamless first-load access
-      const res = await loginApi('admin@skyops.io', 'SkyOpsAdmin123!');
-      setCurrentUser(res.user);
     } catch (err) {
-      console.warn('Authentication check failed:', err);
-      // Let user open login modal
+      console.warn('Session verification failed, prompt login:', err);
+      setCurrentUser(null);
+    } finally {
+      setIsAuthChecking(false);
     }
   }, []);
 
@@ -317,6 +324,41 @@ export default function App() {
     }
   };
 
+  if (isAuthChecking) {
+    return (
+      <div className="min-h-screen bg-[#070a0f] flex items-center justify-center text-cyan-400 font-mono text-xs">
+        <div className="flex items-center gap-3">
+          <div className="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin"></div>
+          <span>INITIALIZING SKYOPS CONTROL PLANE...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (needsBootstrap) {
+    return (
+      <BootstrapPage
+        setupStatus={setupStatus}
+        onComplete={(user) => {
+          setNeedsBootstrap(false);
+          setCurrentUser(user);
+          loadData();
+        }}
+      />
+    );
+  }
+
+  if (!currentUser) {
+    return (
+      <LoginPage
+        onLoginSuccess={(user) => {
+          setCurrentUser(user);
+          loadData();
+        }}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#070a0f] text-slate-100 flex flex-col font-sans selection:bg-cyan-500/30 selection:text-cyan-200">
       <Header
@@ -352,18 +394,6 @@ export default function App() {
           {renderTabContent()}
         </main>
       </div>
-
-      {/* First-Run Setup Wizard (If fresh install or uninitialized) */}
-      {isSetupRequired && (
-        <SetupWizard
-          setupStatus={setupStatus}
-          onComplete={(user) => {
-            setCurrentUser(user);
-            setIsSetupRequired(false);
-            loadData();
-          }}
-        />
-      )}
 
       {/* Connect Cluster Modal */}
       <ConnectClusterModal

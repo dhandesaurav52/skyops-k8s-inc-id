@@ -3,12 +3,14 @@ import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
 import { getRepository } from './server/db';
+import { bootstrapManager } from './server/auth/bootstrap';
 import { authRouter } from './server/api/auth';
 import { usersRouter } from './server/api/users';
 import { organizationsRouter } from './server/api/organizations';
 import { licenseRouter } from './server/api/license';
 import { systemRouter } from './server/api/system';
 import { setupRouter } from './server/api/setup';
+import { bootstrapRouter } from './server/api/bootstrap';
 import { clustersRouter } from './server/api/clusters';
 import { agentRouter } from './server/api/agent';
 import { incidentsRouter } from './server/api/incidents';
@@ -29,6 +31,9 @@ async function startServer() {
   const dbHealth = await repo.healthCheck();
   console.log(`[SkyOps Platform] Database Engine: ${dbHealth.type} (${dbHealth.healthy ? 'READY' : 'DEGRADED'})`);
   console.log(`[SkyOps Platform] Deployment Mode: ${getDeploymentMode().toUpperCase()} (Data Telemetry: ${isDataTelemetryEnabled() ? 'ENABLED' : 'STRICT_LOCAL'})`);
+
+  // Initialize Bootstrap Credential Lifecycle
+  await bootstrapManager.initializeOnStartup(repo);
 
   // Basic Middlewares
   app.use(express.json({ limit: '10mb' }));
@@ -191,6 +196,7 @@ echo "Live telemetry stream will be available in the SkyOps Console in ~10 secon
   app.use('/api/v1/license', licenseRouter);
   app.use('/api/v1/system', systemRouter);
   app.use('/api/v1/setup', setupRouter);
+  app.use('/api/v1/bootstrap', bootstrapRouter);
   app.use('/api/v1/clusters', clustersRouter);
   app.use('/api/v1/agent', agentRouter);
   app.use('/api/v1/incidents', incidentsRouter);
